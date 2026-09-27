@@ -1,5 +1,10 @@
+const isLocal =
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1";
+
 const API_BASE =
-  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+  import.meta.env.VITE_API_URL ||
+  (isLocal ? "http://127.0.0.1:8000" : "");
 
 async function request(path, options = {}) {
   const token = localStorage.getItem("pashuAccessToken");
@@ -43,16 +48,11 @@ async function request(path, options = {}) {
 export const api = {
   baseUrl: API_BASE,
 
-  // =========================
   // AUTH
-  // =========================
   login: (email, password) =>
     request("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({
-        email,
-        password,
-      }),
+      body: JSON.stringify({ email, password }),
     }),
 
   register: (payload) =>
@@ -63,15 +63,11 @@ export const api = {
 
   me: () => request("/api/auth/me"),
 
-  // =========================
   // DASHBOARD
-  // =========================
   dashboardSummary: () =>
     request("/api/dashboard/summary"),
 
-  // =========================
   // ANIMALS
-  // =========================
   animals: {
     list: () =>
       request("/api/animals"),
@@ -89,9 +85,7 @@ export const api = {
       }),
   },
 
-  // =========================
   // CASES
-  // =========================
   cases: {
     list: (params = {}) => {
       const query = new URLSearchParams();
@@ -108,8 +102,9 @@ export const api = {
         query.set("limit", params.limit);
       }
 
-      const queryString = query.toString();
-      const suffix = queryString ? `?${queryString}` : "";
+      const suffix = query.toString()
+        ? `?${query.toString()}`
+        : "";
 
       return request(`/api/cases${suffix}`);
     },
@@ -127,9 +122,7 @@ export const api = {
       }),
   },
 
-  // =========================
   // HEALTH RECORDS
-  // =========================
   healthRecords: {
     list: () =>
       request("/api/health-records"),
@@ -141,9 +134,7 @@ export const api = {
       }),
   },
 
-  // =========================
   // VACCINATIONS
-  // =========================
   vaccinations: {
     list: () =>
       request("/api/vaccinations"),
@@ -161,9 +152,7 @@ export const api = {
       }),
   },
 
-  // =========================
   // TREATMENTS
-  // =========================
   treatments: {
     list: () =>
       request("/api/treatments"),
@@ -181,16 +170,14 @@ export const api = {
       }),
   },
 
-  // =========================
   // FOLLOW-UPS
-  // =========================
   followUps: {
     list: (status) => {
-      const query = status
+      const suffix = status
         ? `?status=${encodeURIComponent(status)}`
         : "";
 
-      return request(`/api/follow-ups${query}`);
+      return request(`/api/follow-ups${suffix}`);
     },
 
     create: (payload) =>
@@ -206,9 +193,7 @@ export const api = {
       }),
   },
 
-  // =========================
-  // LAB TESTS
-  // =========================
+  // LAB
   labTests: {
     list: () =>
       request("/api/lab-tests"),
@@ -226,9 +211,7 @@ export const api = {
       }),
   },
 
-  // =========================
   // AI
-  // =========================
   ai: {
     analyze: (payload) =>
       request("/api/ai/analyze", {
@@ -237,17 +220,16 @@ export const api = {
       }),
   },
 
-  // =========================
   // NOTIFICATIONS
-  // =========================
   notifications: {
-    list: (unreadOnly = false) => {
-      const query = unreadOnly
-        ? "?unread_only=true"
-        : "";
-
-      return request(`/api/notifications${query}`);
-    },
+    list: (unreadOnly = false) =>
+      request(
+        `/api/notifications${
+          unreadOnly
+            ? "?unread_only=true"
+            : ""
+        }`
+      ),
 
     create: (payload) =>
       request("/api/notifications", {
@@ -256,32 +238,28 @@ export const api = {
       }),
   },
 
-  // =========================
   // OUTBREAKS
-  // =========================
   outbreaks: {
     summary: () =>
       request("/api/outbreaks/summary"),
   },
 
-  // =========================
   // ANALYTICS
-  // =========================
   analytics: {
     summary: () =>
       request("/api/analytics/summary"),
   },
 
-  // =========================
   // ADMIN
-  // =========================
   admin: {
     users: (role) => {
-      const query = role
+      const suffix = role
         ? `?role=${encodeURIComponent(role)}`
         : "";
 
-      return request(`/api/admin/users${query}`);
+      return request(
+        `/api/admin/users${suffix}`
+      );
     },
   },
 };
