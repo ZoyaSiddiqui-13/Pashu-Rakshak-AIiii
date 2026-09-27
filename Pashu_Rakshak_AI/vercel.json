@@ -17,10 +17,76 @@
       }
     },
     {
-      "source": "/(.*)",
-      "destination": {
-        "service": "frontend"
-      }
+      "source": "/login",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/role-selection",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/animals",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/ai-detection",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/map",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/alerts",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/notifications",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/records",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/veterinarian",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/laboratory",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/vaccination",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/treatment",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/cases",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/outbreaks",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/analytics",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/profile",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/help",
+      "destination": "/index.html"
     }
   ]
 }
