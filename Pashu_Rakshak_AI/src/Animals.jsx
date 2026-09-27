@@ -1,1330 +1,534 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { api } from "./api";
 import {
-  Search,
-  Plus,
-  Eye,
-  Pencil,
-  X,
-  PawPrint,
-  MapPin,
-  CalendarDays,
   Activity,
-  ShieldCheck,
   AlertTriangle,
+  Calendar,
+  CheckCircle2,
+  Edit3,
+  Filter,
+  HeartPulse,
+  Loader2,
+  MapPin,
+  Plus,
+  Search,
+  ShieldAlert,
+  Stethoscope,
+  X,
 } from "lucide-react";
 
-const initialAnimals = [
-  {
-    id: "AN-1024",
-    name: "Gauri",
-    type: "Cow",
-    breed: "Gir",
-    age: 4,
-    gender: "Female",
-    location: "Nashik",
-    score: 92,
-    risk: "Low",
-    vaccination: "Up to date",
-    lastCheck: "25 Sep 2026",
-    status: "Healthy",
-  },
-  {
-    id: "AN-1025",
-    name: "Moti",
-    type: "Buffalo",
-    breed: "Murrah",
-    age: 6,
-    gender: "Male",
-    location: "Pune",
-    score: 68,
-    risk: "Medium",
-    vaccination: "Due soon",
-    lastCheck: "24 Sep 2026",
-    status: "Observation",
-  },
-  {
-    id: "AN-1026",
-    name: "Laxmi",
-    type: "Cow",
-    breed: "Sahiwal",
-    age: 3,
-    gender: "Female",
-    location: "Satara",
-    score: 42,
-    risk: "High",
-    vaccination: "Up to date",
-    lastCheck: "26 Sep 2026",
-    status: "Under review",
-  },
-  {
-    id: "AN-1027",
-    name: "Raja",
-    type: "Goat",
-    breed: "Osmanabadi",
-    age: 2,
-    gender: "Male",
-    location: "Ahmednagar",
-    score: 31,
-    risk: "Critical",
-    vaccination: "Due",
-    lastCheck: "27 Sep 2026",
-    status: "Active case",
-  },
-  {
-    id: "AN-1028",
-    name: "Kali",
-    type: "Sheep",
-    breed: "Deccani",
-    age: 5,
-    gender: "Female",
-    location: "Solapur",
-    score: 81,
-    risk: "Low",
-    vaccination: "Up to date",
-    lastCheck: "23 Sep 2026",
-    status: "Healthy",
-  },
-  {
-    id: "AN-1029",
-    name: "Maya",
-    type: "Cow",
-    breed: "Jersey",
-    age: 7,
-    gender: "Female",
-    location: "Thane",
-    score: 57,
-    risk: "Medium",
-    vaccination: "Due soon",
-    lastCheck: "22 Sep 2026",
-    status: "Observation",
-  },
-];
+const EMPTY_FORM = {
+  name: "",
+  species: "Cow",
+  breed: "",
+  age: "",
+  gender: "Female",
+  village: "",
+  health_status: "Healthy",
+};
 
-const riskClass = (risk) =>
-  `animal-risk animal-risk-${risk.toLowerCase()}`;
+const RISK = ["Healthy", "Observation", "High Risk", "Critical"];
 
-function Animals() {
-  const [animals, setAnimals] =
-    useState(initialAnimals);
-
+export default function Animals() {
+  const [animals, setAnimals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
-  const [riskFilter, setRiskFilter] =
-    useState("All");
-  const [typeFilter, setTypeFilter] =
-    useState("All");
+  const [healthFilter, setHealthFilter] = useState("All");
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
 
-  const [selectedAnimal, setSelectedAnimal] =
-    useState(null);
-
-  const [editingAnimal, setEditingAnimal] =
-    useState(null);
-
-  const filteredAnimals = useMemo(() => {
-    return animals.filter((animal) => {
-      const text =
-        `${animal.id} ${animal.name} ${animal.type} ${animal.breed} ${animal.location}`
-          .toLowerCase();
-
-      const matchesSearch =
-        text.includes(search.toLowerCase());
-
-      const matchesRisk =
-        riskFilter === "All" ||
-        animal.risk === riskFilter;
-
-      const matchesType =
-        typeFilter === "All" ||
-        animal.type === typeFilter;
-
-      return (
-        matchesSearch &&
-        matchesRisk &&
-        matchesType
-      );
-    });
-  }, [
-    animals,
-    search,
-    riskFilter,
-    typeFilter,
-  ]);
-
-  const counts = {
-    total: animals.length,
-    low: animals.filter(
-      (a) => a.risk === "Low"
-    ).length,
-    medium: animals.filter(
-      (a) => a.risk === "Medium"
-    ).length,
-    high: animals.filter(
-      (a) => a.risk === "High"
-    ).length,
-    critical: animals.filter(
-      (a) => a.risk === "Critical"
-    ).length,
+  const loadAnimals = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const data = await api.animals.list();
+      setAnimals(Array.isArray(data?.items) ? data.items : []);
+    } catch (err) {
+      setError(err.message || "Unable to load animals.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const updateAnimal = () => {
-    if (!editingAnimal) return;
+  useEffect(() => {
+    loadAnimals();
+  }, []);
 
-    setAnimals((prev) =>
-      prev.map((animal) =>
-        animal.id === editingAnimal.id
-          ? editingAnimal
-          : animal
-      )
-    );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return animals.filter((animal) => {
+      const status = animal.health_status || "Healthy";
+      const filterMatch =
+        healthFilter === "All" || status === healthFilter;
+      const searchMatch =
+        !q ||
+        [
+          animal.name,
+          animal.species,
+          animal.breed,
+          animal.village,
+          animal.gender,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      return filterMatch && searchMatch;
+    });
+  }, [animals, search, healthFilter]);
 
-    setEditingAnimal(null);
+  const stats = useMemo(() => {
+    const healthy = animals.filter(
+      (a) => (a.health_status || "Healthy") === "Healthy"
+    ).length;
+    const observation = animals.filter(
+      (a) => (a.health_status || "Healthy") === "Observation"
+    ).length;
+    const highRisk = animals.filter((a) =>
+      ["High Risk", "Critical"].includes(a.health_status)
+    ).length;
+    return { total: animals.length, healthy, observation, highRisk };
+  }, [animals]);
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setShowForm(true);
+  };
+
+  const openEdit = (animal) => {
+    setEditingId(animal.id);
+    setForm({
+      name: animal.name || "",
+      species: animal.species || "Cow",
+      breed: animal.breed || "",
+      age: animal.age ?? "",
+      gender: animal.gender || "Female",
+      village: animal.village || "",
+      health_status: animal.health_status || "Healthy",
+    });
+    setShowForm(true);
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.species.trim()) {
+      setError("Animal name and species are required.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+
+      const payload = {
+        name: form.name.trim(),
+        species: form.species.trim(),
+        breed: form.breed.trim() || null,
+        age: form.age === "" ? null : Number(form.age),
+        gender: form.gender || null,
+        village: form.village.trim() || null,
+        health_status: form.health_status,
+      };
+
+      if (editingId) {
+        await api.animals.update(editingId, payload);
+        setNotice("Animal updated successfully.");
+      } else {
+        await api.animals.create(payload);
+        setNotice("Animal added to MongoDB successfully.");
+      }
+
+      setShowForm(false);
+      setForm(EMPTY_FORM);
+      setEditingId(null);
+      await loadAnimals();
+    } catch (err) {
+      setError(err.message || "Unable to save animal.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <>
-      <style>{`
-        .animals-page {
-          width: 100%;
-          max-width: 1200px;
-          margin: 0 auto;
-          padding-bottom: 30px;
-        }
-
-        .animals-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          margin-bottom: 22px;
-        }
-
-        .animals-header h1 {
-          margin: 0;
-          color: #173e35;
-          font-size: 30px;
-        }
-
-        .animals-header p {
-          margin: 6px 0 0;
-          color: #73827c;
-          font-size: 13px;
-        }
-
-        .animal-add-btn {
-          border: 0;
-          background: #d8f25c;
-          color: #173e35;
-          border-radius: 10px;
-          padding: 11px 16px;
-          font-weight: 800;
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          cursor: pointer;
-        }
-
-        .animal-summary {
-          display: grid;
-          grid-template-columns: repeat(5, 1fr);
-          gap: 13px;
-          margin-bottom: 18px;
-        }
-
-        .animal-summary-card {
-          background: #ffffff;
-          border: 1px solid #e2ebe7;
-          border-radius: 13px;
-          padding: 15px;
-        }
-
-        .animal-summary-card span {
-          display: block;
-          color: #7b8984;
-          font-size: 11px;
-        }
-
-        .animal-summary-card strong {
-          display: block;
-          margin-top: 3px;
-          color: #183f35;
-          font-size: 23px;
-        }
-
-        .animal-summary-card.critical strong {
-          color: #d63e3e;
-        }
-
-        .animal-summary-card.high strong {
-          color: #c37b21;
-        }
-
-        .animal-summary-card.medium strong {
-          color: #98731e;
-        }
-
-        .animal-toolbar {
-          background: #ffffff;
-          border: 1px solid #e2ebe7;
-          border-radius: 14px;
-          padding: 13px;
-          display: flex;
-          gap: 10px;
-          margin-bottom: 18px;
-        }
-
-        .animal-search {
-          flex: 1;
-          position: relative;
-        }
-
-        .animal-search svg {
-          position: absolute;
-          left: 12px;
-          top: 50%;
-          transform: translateY(-50%);
-          color: #899891;
-        }
-
-        .animal-search input,
-        .animal-toolbar select {
-          width: 100%;
-          height: 42px;
-          border: 1px solid #dce6e1;
-          border-radius: 9px;
-          background: #fbfdfc;
-          outline: none;
-          color: #25483f;
-          font-size: 12px;
-        }
-
-        .animal-search input {
-          padding: 0 12px 0 39px;
-        }
-
-        .animal-toolbar select {
-          width: 180px;
-          padding: 0 10px;
-        }
-
-        .animal-search input:focus,
-        .animal-toolbar select:focus {
-          border-color: #8daa4b;
-        }
-
-        .animal-grid-advanced {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 16px;
-        }
-
-        .animal-card-advanced {
-          background: #ffffff;
-          border: 1px solid #e2ebe7;
-          border-radius: 15px;
-          padding: 18px;
-          transition: .2s ease;
-        }
-
-        .animal-card-advanced:hover {
-          transform: translateY(-3px);
-          box-shadow: 0 10px 28px rgba(20,65,53,.08);
-          border-color: #cbdcab;
-        }
-
-        .animal-card-top {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .animal-avatar-big {
-          width: 50px;
-          height: 50px;
-          border-radius: 14px;
-          display: grid;
-          place-items: center;
-          background: #edf7d8;
-          color: #4e7425;
-          font-size: 20px;
-          font-weight: 800;
-        }
-
-        .animal-risk {
-          display: inline-flex;
-          padding: 5px 9px;
-          border-radius: 999px;
-          font-size: 10px;
-          font-weight: 800;
-        }
-
-        .animal-risk-low {
-          background: #edf8dc;
-          color: #5d8527;
-        }
-
-        .animal-risk-medium {
-          background: #fff6dc;
-          color: #98721d;
-        }
-
-        .animal-risk-high {
-          background: #fff0dc;
-          color: #b7671d;
-        }
-
-        .animal-risk-critical {
-          background: #ffebeb;
-          color: #d23b3b;
-        }
-
-        .animal-card-advanced h3 {
-          margin: 14px 0 3px;
-          color: #183e35;
-          font-size: 18px;
-        }
-
-        .animal-id {
-          color: #82918b;
-          font-size: 11px;
-        }
-
-        .animal-details {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-          margin: 16px 0;
-        }
-
-        .animal-detail {
-          background: #f7faf8;
-          border-radius: 9px;
-          padding: 9px;
-        }
-
-        .animal-detail span {
-          display: block;
-          color: #8a9892;
-          font-size: 9px;
-        }
-
-        .animal-detail b {
-          display: block;
-          margin-top: 2px;
-          color: #3d5b52;
-          font-size: 11px;
-        }
-
-        .animal-score-header {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 6px;
-          font-size: 11px;
-        }
-
-        .animal-score-header span {
-          color: #7d8b85;
-        }
-
-        .animal-score-header b {
-          color: #36594e;
-        }
-
-        .animal-progress {
-          height: 7px;
-          background: #edf1ef;
-          border-radius: 999px;
-          overflow: hidden;
-        }
-
-        .animal-progress span {
-          display: block;
-          height: 100%;
-          border-radius: inherit;
-          background: #8eaf3a;
-        }
-
-        .animal-status-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-top: 14px;
-        }
-
-        .animal-status {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          color: #6f8079;
-          font-size: 10px;
-        }
-
-        .animal-status i {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #7eaa32;
-        }
-
-        .animal-card-actions {
-          display: flex;
-          gap: 7px;
-        }
-
-        .animal-action {
-          height: 32px;
-          border: 1px solid #dce6e1;
-          background: #ffffff;
-          color: #45645a;
-          border-radius: 8px;
-          padding: 0 9px;
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          cursor: pointer;
-          font-size: 10px;
-          font-weight: 700;
-        }
-
-        .animal-action:hover {
-          background: #f2f7f4;
-        }
-
-        .animal-empty {
-          grid-column: 1 / -1;
-          background: #ffffff;
-          border: 1px solid #e2ebe7;
-          border-radius: 15px;
-          padding: 60px;
-          text-align: center;
-          color: #80908a;
-        }
-
-        .animal-modal-bg {
-          position: fixed;
-          inset: 0;
-          background: rgba(10, 35, 29, .48);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 20px;
-          z-index: 9999;
-          backdrop-filter: blur(3px);
-        }
-
-        .animal-modal {
-          width: 100%;
-          max-width: 650px;
-          max-height: 90vh;
-          overflow-y: auto;
-          background: #ffffff;
-          border-radius: 18px;
-          box-shadow: 0 25px 80px rgba(0,0,0,.2);
-        }
-
-        .animal-modal-header {
-          padding: 20px;
-          border-bottom: 1px solid #e8efec;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .animal-modal-header h2 {
-          margin: 0;
-          color: #173e35;
-        }
-
-        .animal-modal-header p {
-          margin: 4px 0 0;
-          color: #81908a;
-          font-size: 11px;
-        }
-
-        .animal-close {
-          width: 34px;
-          height: 34px;
-          border: 1px solid #dfe8e4;
-          background: #ffffff;
-          border-radius: 8px;
-          display: grid;
-          place-items: center;
-          cursor: pointer;
-          color: #62746c;
-        }
-
-        .animal-modal-body {
-          padding: 20px;
-        }
-
-        .profile-top {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          padding: 14px;
-          background: #f7faf8;
-          border-radius: 12px;
-          margin-bottom: 18px;
-        }
-
-        .profile-avatar {
-          width: 58px;
-          height: 58px;
-          border-radius: 15px;
-          background: #eaf6ce;
-          color: #527728;
-          display: grid;
-          place-items: center;
-          font-size: 23px;
-          font-weight: 800;
-        }
-
-        .profile-top h3 {
-          margin: 0 0 3px;
-          color: #173f35;
-        }
-
-        .profile-top span {
-          color: #80908a;
-          font-size: 11px;
-        }
-
-        .profile-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 10px;
-        }
-
-        .profile-box {
-          border: 1px solid #e5ece9;
-          border-radius: 10px;
-          padding: 12px;
-        }
-
-        .profile-box span {
-          display: block;
-          color: #899790;
-          font-size: 10px;
-        }
-
-        .profile-box b {
-          display: block;
-          margin-top: 4px;
-          color: #35574d;
-          font-size: 13px;
-        }
-
-        .profile-section {
-          margin-top: 18px;
-        }
-
-        .profile-section h3 {
-          margin: 0 0 10px;
-          color: #254a40;
-          font-size: 14px;
-        }
-
-        .profile-health {
-          display: flex;
-          align-items: center;
-          gap: 18px;
-          padding: 15px;
-          border-radius: 12px;
-          background: #f7faf8;
-        }
-
-        .profile-score {
-          width: 72px;
-          height: 72px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          background: #e8f4cb;
-          color: #507426;
-          font-size: 22px;
-          font-weight: 800;
-        }
-
-        .profile-health p {
-          margin: 4px 0 0;
-          color: #71827a;
-          font-size: 11px;
-        }
-
-        .profile-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 8px;
-          margin-top: 20px;
-        }
-
-        .edit-form {
-          display: grid;
-          gap: 13px;
-        }
-
-        .edit-form label {
-          display: grid;
-          gap: 6px;
-          color: #48645b;
-          font-size: 11px;
-          font-weight: 700;
-        }
-
-        .edit-form input,
-        .edit-form select {
-          height: 40px;
-          border: 1px solid #dce6e1;
-          border-radius: 8px;
-          padding: 0 10px;
-          outline: none;
-          color: #294a41;
-        }
-
-        .edit-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 8px;
-          margin-top: 6px;
-        }
-
-        @media (max-width: 1000px) {
-          .animal-grid-advanced {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .animal-summary {
-            grid-template-columns: repeat(3, 1fr);
-          }
-        }
-
-        @media (max-width: 700px) {
-          .animal-grid-advanced {
-            grid-template-columns: 1fr;
-          }
-
-          .animal-summary {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .animals-header {
-            flex-direction: column;
-            align-items: flex-start;
-          }
-
-          .animal-toolbar {
-            flex-direction: column;
-          }
-
-          .animal-toolbar select {
-            width: 100%;
-          }
-        }
-
-        @media (max-width: 450px) {
-          .animal-summary {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .profile-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
-
-      <div className="animals-page">
-
-        {/* HEADER */}
-
-        <div className="animals-header">
-          <div>
-            <h1>Animals</h1>
-            <p>
-              Manage animal profiles, health scores,
-              vaccination and risk status.
-            </p>
-          </div>
-
-          <button
-            className="animal-add-btn"
-            onClick={() =>
-              alert(
-                "Add Animal form will be connected next."
-              )
-            }
+    <div style={styles.page}>
+      <header style={styles.header}>
+        <div>
+          <span style={styles.eyebrow}>LIVESTOCK MANAGEMENT</span>
+          <h1 style={styles.title}>Animals</h1>
+          <p style={styles.subtitle}>
+            Live animal records stored in your PASHU-RAKSHAK AI database.
+          </p>
+        </div>
+
+        <button style={styles.primary} onClick={openCreate}>
+          <Plus size={17} />
+          Add Animal
+        </button>
+      </header>
+
+      {notice && (
+        <Banner tone="success" onClose={() => setNotice("")}>
+          {notice}
+        </Banner>
+      )}
+      {error && (
+        <Banner tone="error" onClose={() => setError("")}>
+          {error}
+        </Banner>
+      )}
+
+      <div style={styles.kpiGrid}>
+        <Kpi icon={Activity} label="Total Animals" value={stats.total} />
+        <Kpi icon={CheckCircle2} label="Healthy" value={stats.healthy} />
+        <Kpi icon={HeartPulse} label="Observation" value={stats.observation} />
+        <Kpi icon={ShieldAlert} label="High Risk / Critical" value={stats.highRisk} danger />
+      </div>
+
+      <section style={styles.toolbar}>
+        <div style={styles.searchWrap}>
+          <Search size={17} color="#94a3b8" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search animal, breed, village..."
+            style={styles.input}
+          />
+        </div>
+
+        <div style={styles.filterWrap}>
+          <Filter size={16} color="#64748b" />
+          <select
+            value={healthFilter}
+            onChange={(e) => setHealthFilter(e.target.value)}
+            style={styles.select}
           >
-            <Plus size={17} />
-            Add Animal
+            <option>All</option>
+            {RISK.map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </select>
+        </div>
+      </section>
+
+      <section style={styles.card}>
+        <div style={styles.sectionHead}>
+          <div>
+            <h2 style={styles.sectionTitle}>Animal Registry</h2>
+            <p style={styles.sectionSub}>{filtered.length} records shown</p>
+          </div>
+          <button style={styles.ghost} onClick={loadAnimals}>
+            Refresh
           </button>
         </div>
 
-        {/* SUMMARY */}
-
-        <div className="animal-summary">
-
-          <div className="animal-summary-card">
-            <span>Total Animals</span>
-            <strong>{counts.total}</strong>
+        {loading ? (
+          <div style={styles.loading}>
+            <Loader2 size={23} style={{ animation: "spin 1s linear infinite" }} />
+            Loading animals...
           </div>
-
-          <div className="animal-summary-card">
-            <span>Low Risk</span>
-            <strong>{counts.low}</strong>
+        ) : filtered.length === 0 ? (
+          <div style={styles.empty}>
+            <HeartPulse size={34} color="#94a3b8" />
+            <h3 style={styles.emptyTitle}>No animals found</h3>
+            <p style={styles.emptyText}>
+              Add your first animal and it will be saved in MongoDB.
+            </p>
+            <button style={styles.primary} onClick={openCreate}>
+              <Plus size={17} />
+              Add Animal
+            </button>
           </div>
-
-          <div className="animal-summary-card medium">
-            <span>Medium Risk</span>
-            <strong>{counts.medium}</strong>
-          </div>
-
-          <div className="animal-summary-card high">
-            <span>High Risk</span>
-            <strong>{counts.high}</strong>
-          </div>
-
-          <div className="animal-summary-card critical">
-            <span>Critical</span>
-            <strong>{counts.critical}</strong>
-          </div>
-
-        </div>
-
-        {/* TOOLBAR */}
-
-        <div className="animal-toolbar">
-
-          <div className="animal-search">
-            <Search size={17} />
-
-            <input
-              value={search}
-              onChange={(e) =>
-                setSearch(e.target.value)
-              }
-              placeholder="Search animal, ID, breed or location..."
-            />
-          </div>
-
-          <select
-            value={riskFilter}
-            onChange={(e) =>
-              setRiskFilter(e.target.value)
-            }
-          >
-            <option value="All">
-              All Risk Levels
-            </option>
-            <option value="Low">Low</option>
-            <option value="Medium">Medium</option>
-            <option value="High">High</option>
-            <option value="Critical">
-              Critical
-            </option>
-          </select>
-
-          <select
-            value={typeFilter}
-            onChange={(e) =>
-              setTypeFilter(e.target.value)
-            }
-          >
-            <option value="All">
-              All Animal Types
-            </option>
-            <option value="Cow">Cow</option>
-            <option value="Buffalo">
-              Buffalo
-            </option>
-            <option value="Goat">Goat</option>
-            <option value="Sheep">Sheep</option>
-          </select>
-
-        </div>
-
-        {/* CARDS */}
-
-        <div className="animal-grid-advanced">
-
-          {filteredAnimals.length === 0 ? (
-            <div className="animal-empty">
-              <PawPrint size={35} />
-
-              <h3>No animals found</h3>
-
-              <p>
-                Try changing your search or filters.
-              </p>
-            </div>
-          ) : (
-            filteredAnimals.map((animal) => (
-              <div
-                className="animal-card-advanced"
-                key={animal.id}
-              >
-
-                <div className="animal-card-top">
-
-                  <div className="animal-avatar-big">
-                    {animal.name[0]}
+        ) : (
+          <div style={styles.grid}>
+            {filtered.map((animal) => (
+              <article key={animal.id} style={styles.animalCard}>
+                <div style={styles.animalTop}>
+                  <div style={styles.avatar}>
+                    {String(animal.name || "?").slice(0, 1).toUpperCase()}
                   </div>
-
-                  <span
-                    className={riskClass(
-                      animal.risk
-                    )}
+                  <button
+                    type="button"
+                    style={styles.iconButton}
+                    onClick={() => openEdit(animal)}
+                    title="Edit animal"
                   >
-                    {animal.risk}
+                    <Edit3 size={16} />
+                  </button>
+                </div>
+
+                <h3 style={styles.animalName}>{animal.name}</h3>
+                <p style={styles.species}>
+                  {animal.species}
+                  {animal.breed ? ` • ${animal.breed}` : ""}
+                </p>
+
+                <div style={styles.metaRow}>
+                  <Tag icon={Calendar} text={animal.age != null ? `${animal.age} yrs` : "Age —"} />
+                  <Tag icon={Stethoscope} text={animal.gender || "Gender —"} />
+                </div>
+
+                <div style={styles.metaRow}>
+                  <Tag icon={MapPin} text={animal.village || "Location —"} />
+                </div>
+
+                <div style={styles.statusRow}>
+                  <span style={statusStyle(animal.health_status)}>
+                    {animal.health_status || "Healthy"}
                   </span>
-
+                  <span style={styles.idText}>
+                    ID {String(animal.id).slice(-6).toUpperCase()}
+                  </span>
                 </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
-                <h3>{animal.name}</h3>
-
-                <span className="animal-id">
-                  {animal.id} · {animal.breed}
-                </span>
-
-                <div className="animal-details">
-
-                  <div className="animal-detail">
-                    <span>TYPE</span>
-                    <b>{animal.type}</b>
-                  </div>
-
-                  <div className="animal-detail">
-                    <span>AGE</span>
-                    <b>{animal.age} yrs</b>
-                  </div>
-
-                  <div className="animal-detail">
-                    <span>LOCATION</span>
-                    <b>{animal.location}</b>
-                  </div>
-
-                </div>
-
-                <div className="animal-score-header">
-                  <span>Health Score</span>
-                  <b>{animal.score}/100</b>
-                </div>
-
-                <div className="animal-progress">
-                  <span
-                    style={{
-                      width: `${animal.score}%`,
-                    }}
-                  />
-                </div>
-
-                <div className="animal-status-row">
-
-                  <div className="animal-status">
-                    <i />
-                    {animal.status}
-                  </div>
-
-                  <div className="animal-card-actions">
-
-                    <button
-                      className="animal-action"
-                      onClick={() =>
-                        setSelectedAnimal(
-                          animal
-                        )
-                      }
-                    >
-                      <Eye size={14} />
-                      View
-                    </button>
-
-                    <button
-                      className="animal-action"
-                      onClick={() =>
-                        setEditingAnimal({
-                          ...animal,
-                        })
-                      }
-                    >
-                      <Pencil size={14} />
-                      Edit
-                    </button>
-
-                  </div>
-
-                </div>
-
-              </div>
-            ))
-          )}
-
-        </div>
-
-      </div>
-
-      {/* VIEW MODAL */}
-
-      {selectedAnimal && (
-        <div
-          className="animal-modal-bg"
-          onClick={() =>
-            setSelectedAnimal(null)
-          }
-        >
-          <div
-            className="animal-modal"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
-          >
-
-            <div className="animal-modal-header">
+      {showForm && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHead}>
               <div>
-                <h2>Animal Profile</h2>
-
-                <p>
-                  Complete health overview
+                <h2 style={styles.modalTitle}>
+                  {editingId ? "Edit Animal" : "Add Animal"}
+                </h2>
+                <p style={styles.modalSub}>
+                  Save the record directly to the backend database.
                 </p>
               </div>
-
-              <button
-                className="animal-close"
-                onClick={() =>
-                  setSelectedAnimal(null)
-                }
-              >
+              <button style={styles.iconButton} onClick={() => setShowForm(false)}>
                 <X size={18} />
               </button>
             </div>
 
-            <div className="animal-modal-body">
-
-              <div className="profile-top">
-
-                <div className="profile-avatar">
-                  {selectedAnimal.name[0]}
-                </div>
-
-                <div>
-                  <h3>
-                    {selectedAnimal.name}
-                  </h3>
-
-                  <span>
-                    {selectedAnimal.id} ·{" "}
-                    {selectedAnimal.type}
-                  </span>
-                </div>
-
-                <span
-                  className={riskClass(
-                    selectedAnimal.risk
-                  )}
-                  style={{
-                    marginLeft: "auto",
-                  }}
-                >
-                  {selectedAnimal.risk}
-                </span>
-
-              </div>
-
-              <div className="profile-grid">
-
-                <div className="profile-box">
-                  <span>BREED</span>
-                  <b>{selectedAnimal.breed}</b>
-                </div>
-
-                <div className="profile-box">
-                  <span>AGE</span>
-                  <b>{selectedAnimal.age} years</b>
-                </div>
-
-                <div className="profile-box">
-                  <span>GENDER</span>
-                  <b>{selectedAnimal.gender}</b>
-                </div>
-
-                <div className="profile-box">
-                  <span>LOCATION</span>
-                  <b>{selectedAnimal.location}</b>
-                </div>
-
-                <div className="profile-box">
-                  <span>VACCINATION</span>
-                  <b>{selectedAnimal.vaccination}</b>
-                </div>
-
-                <div className="profile-box">
-                  <span>LAST CHECK</span>
-                  <b>{selectedAnimal.lastCheck}</b>
-                </div>
-
-              </div>
-
-              <div className="profile-section">
-
-                <h3>Health Overview</h3>
-
-                <div className="profile-health">
-
-                  <div className="profile-score">
-                    {selectedAnimal.score}
-                  </div>
-
-                  <div>
-                    <b>
-                      Health Score
-                    </b>
-
-                    <p>
-                      Current health assessment based
-                      on monitored data.
-                    </p>
-                  </div>
-
-                </div>
-
-              </div>
-
-              <div className="profile-section">
-
-                <h3>Current Status</h3>
-
-                <div className="next">
-                  {selectedAnimal.risk ===
-                  "Critical" ? (
-                    <AlertTriangle size={20} />
-                  ) : (
-                    <ShieldCheck size={20} />
-                  )}
-
-                  <div>
-                    <b>
-                      {selectedAnimal.status}
-                    </b>
-
-                    <p>
-                      Vaccination:{" "}
-                      {selectedAnimal.vaccination}
-                      {" · "}
-                      Last health check:{" "}
-                      {selectedAnimal.lastCheck}
-                    </p>
-                  </div>
-                </div>
-
-              </div>
-
-              <div className="profile-actions">
-
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    setEditingAnimal({
-                      ...selectedAnimal,
-                    });
-
-                    setSelectedAnimal(null);
-                  }}
-                >
-                  <Pencil size={14} />
-                  Edit Profile
-                </button>
-
-                <button
-                  className="primary"
-                  onClick={() =>
-                    setSelectedAnimal(null)
-                  }
-                >
-                  Close
-                </button>
-
-              </div>
-
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* EDIT MODAL */}
-
-      {editingAnimal && (
-        <div
-          className="animal-modal-bg"
-          onClick={() =>
-            setEditingAnimal(null)
-          }
-        >
-          <div
-            className="animal-modal"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
-          >
-
-            <div className="animal-modal-header">
-
-              <div>
-                <h2>Edit Animal</h2>
-
-                <p>
-                  Update animal profile information
-                </p>
-              </div>
-
-              <button
-                className="animal-close"
-                onClick={() =>
-                  setEditingAnimal(null)
-                }
-              >
-                <X size={18} />
-              </button>
-
-            </div>
-
-            <div className="animal-modal-body">
-
-              <div className="edit-form">
-
-                <label>
-                  Animal Name
-
+            <form onSubmit={submit}>
+              <div style={styles.formGrid}>
+                <Field label="Animal Name">
                   <input
-                    value={editingAnimal.name}
-                    onChange={(e) =>
-                      setEditingAnimal({
-                        ...editingAnimal,
-                        name: e.target.value,
-                      })
-                    }
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="e.g. Gauri"
+                    style={styles.formInput}
                   />
-                </label>
-
-                <label>
-                  Breed
-
+                </Field>
+                <Field label="Species">
                   <input
-                    value={editingAnimal.breed}
-                    onChange={(e) =>
-                      setEditingAnimal({
-                        ...editingAnimal,
-                        breed: e.target.value,
-                      })
-                    }
+                    value={form.species}
+                    onChange={(e) => setForm({ ...form, species: e.target.value })}
+                    placeholder="Cow"
+                    style={styles.formInput}
                   />
-                </label>
-
-                <label>
-                  Location
-
+                </Field>
+                <Field label="Breed">
                   <input
-                    value={
-                      editingAnimal.location
-                    }
-                    onChange={(e) =>
-                      setEditingAnimal({
-                        ...editingAnimal,
-                        location:
-                          e.target.value,
-                      })
-                    }
+                    value={form.breed}
+                    onChange={(e) => setForm({ ...form, breed: e.target.value })}
+                    placeholder="Gir"
+                    style={styles.formInput}
                   />
-                </label>
-
-                <label>
-                  Risk Level
-
-                  <select
-                    value={editingAnimal.risk}
-                    onChange={(e) =>
-                      setEditingAnimal({
-                        ...editingAnimal,
-                        risk: e.target.value,
-                      })
-                    }
-                  >
-                    <option>Low</option>
-                    <option>Medium</option>
-                    <option>High</option>
-                    <option>Critical</option>
-                  </select>
-                </label>
-
-                <label>
-                  Health Score
-
+                </Field>
+                <Field label="Age">
                   <input
                     type="number"
                     min="0"
-                    max="100"
-                    value={editingAnimal.score}
-                    onChange={(e) =>
-                      setEditingAnimal({
-                        ...editingAnimal,
-                        score: Number(
-                          e.target.value
-                        ),
-                      })
-                    }
+                    max="50"
+                    value={form.age}
+                    onChange={(e) => setForm({ ...form, age: e.target.value })}
+                    placeholder="4"
+                    style={styles.formInput}
                   />
-                </label>
-
-                <label>
-                  Vaccination
-
+                </Field>
+                <Field label="Gender">
                   <select
-                    value={
-                      editingAnimal.vaccination
-                    }
-                    onChange={(e) =>
-                      setEditingAnimal({
-                        ...editingAnimal,
-                        vaccination:
-                          e.target.value,
-                      })
-                    }
+                    value={form.gender}
+                    onChange={(e) => setForm({ ...form, gender: e.target.value })}
+                    style={styles.formInput}
                   >
-                    <option>
-                      Up to date
-                    </option>
-                    <option>
-                      Due soon
-                    </option>
-                    <option>Due</option>
+                    <option>Female</option>
+                    <option>Male</option>
                   </select>
-                </label>
-
-                <div className="edit-actions">
-
-                  <button
-                    className="secondary"
-                    onClick={() =>
-                      setEditingAnimal(null)
-                    }
+                </Field>
+                <Field label="Village / Location">
+                  <input
+                    value={form.village}
+                    onChange={(e) => setForm({ ...form, village: e.target.value })}
+                    placeholder="Palghar"
+                    style={styles.formInput}
+                  />
+                </Field>
+                <Field label="Health Status">
+                  <select
+                    value={form.health_status}
+                    onChange={(e) => setForm({ ...form, health_status: e.target.value })}
+                    style={styles.formInput}
                   >
-                    Cancel
-                  </button>
-
-                  <button
-                    className="primary"
-                    onClick={updateAnimal}
-                  >
-                    Save Changes
-                  </button>
-
-                </div>
-
+                    {RISK.map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                </Field>
               </div>
 
-            </div>
-
+              <div style={styles.modalActions}>
+                <button
+                  type="button"
+                  style={styles.ghost}
+                  onClick={() => setShowForm(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" style={styles.primary} disabled={saving}>
+                  {saving ? (
+                    <>
+                      <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} />
+                      {editingId ? "Save Changes" : "Add Animal"}
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
-    </>
+
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @media (max-width: 900px) {
+          .animal-page-grid { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 700px) {
+          .animal-kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .animal-form-grid { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
+    </div>
   );
 }
 
-export default Animals;
+function Kpi({ icon: Icon, label, value, danger = false }) {
+  return (
+    <div style={styles.kpi}>
+      <div style={{ ...styles.kpiIcon, ...(danger ? styles.kpiDanger : {}) }}>
+        <Icon size={19} />
+      </div>
+      <div>
+        <div style={styles.kpiValue}>{value}</div>
+        <div style={styles.kpiLabel}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function Tag({ icon: Icon, text }) {
+  return (
+    <span style={styles.tag}>
+      <Icon size={13} />
+      {text}
+    </span>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <label style={styles.field}>
+      <span style={styles.fieldLabel}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Banner({ tone, onClose, children }) {
+  const success = tone === "success";
+  return (
+    <div
+      style={{
+        ...styles.banner,
+        ...(success ? styles.bannerSuccess : styles.bannerError),
+      }}
+    >
+      {success ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+      <span style={{ flex: 1 }}>{children}</span>
+      <button style={styles.closeBanner} onClick={onClose}>
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
+function statusStyle(status = "Healthy") {
+  const map = {
+    Healthy: { background: "#ecfdf5", color: "#047857", border: "1px solid #bbf7d0" },
+    Observation: { background: "#fffbeb", color: "#a16207", border: "1px solid #fde68a" },
+    "High Risk": { background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" },
+    Critical: { background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" },
+  };
+  return {
+    ...styles.status,
+    ...(map[status] || map.Healthy),
+  };
+}
+
+const styles = {
+  page: { minHeight: "100vh", background: "#f5f8f6", padding: "28px 30px", color: "#0f172a", fontFamily: "Inter,system-ui,sans-serif" },
+  header: { maxWidth: 1200, margin: "0 auto 22px", display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 20 },
+  eyebrow: { display: "inline-block", fontSize: 11, fontWeight: 900, letterSpacing: "1px", color: "#059669", marginBottom: 7 },
+  title: { margin: 0, fontSize: 34, fontWeight: 900, letterSpacing: "-1px" },
+  subtitle: { margin: "7px 0 0", fontSize: 13, color: "#64748b" },
+  primary: { border: 0, background: "#059669", color: "#fff", borderRadius: 12, padding: "11px 15px", display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 850, cursor: "pointer", boxShadow: "0 8px 22px rgba(5,150,105,.18)" },
+  ghost: { border: "1px solid #dbe5df", background: "#fff", color: "#334155", borderRadius: 11, padding: "10px 13px", fontSize: 11, fontWeight: 800, cursor: "pointer" },
+  banner: { maxWidth: 1200, margin: "0 auto 15px", borderRadius: 14, padding: "11px 13px", display: "flex", alignItems: "center", gap: 9, fontSize: 12, fontWeight: 700 },
+  bannerSuccess: { background: "#ecfdf5", border: "1px solid #bbf7d0", color: "#166534" },
+  bannerError: { background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c" },
+  closeBanner: { border: 0, background: "transparent", cursor: "pointer", color: "currentColor" },
+  kpiGrid: { maxWidth: 1200, margin: "0 auto 18px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 13 },
+  kpi: { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 17, padding: 14, display: "flex", alignItems: "center", gap: 11, boxShadow: "0 8px 22px rgba(15,23,42,.04)" },
+  kpiIcon: { width: 40, height: 40, borderRadius: 12, background: "#ecfdf5", color: "#047857", display: "flex", alignItems: "center", justifyContent: "center" },
+  kpiDanger: { background: "#fef2f2", color: "#dc2626" },
+  kpiValue: { fontSize: 24, fontWeight: 900 },
+  kpiLabel: { marginTop: 2, color: "#64748b", fontSize: 10, fontWeight: 800 },
+  toolbar: { maxWidth: 1200, margin: "0 auto 16px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 17, padding: 12, display: "flex", gap: 9, justifyContent: "space-between" },
+  searchWrap: { flex: 1, maxWidth: 560, display: "flex", alignItems: "center", gap: 8, padding: "0 11px", border: "1px solid #e2e8f0", borderRadius: 11, background: "#f8fafc" },
+  input: { width: "100%", border: 0, outline: 0, background: "transparent", padding: "10px 0", fontSize: 12 },
+  filterWrap: { display: "flex", alignItems: "center", gap: 7, border: "1px solid #e2e8f0", borderRadius: 11, padding: "0 10px", background: "#f8fafc" },
+  select: { border: 0, outline: 0, background: "transparent", padding: "10px 3px", fontSize: 12, fontWeight: 700, color: "#334155" },
+  card: { maxWidth: 1200, margin: "0 auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 20, padding: 17, boxShadow: "0 10px 30px rgba(15,23,42,.04)" },
+  sectionHead: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14 },
+  sectionTitle: { margin: 0, fontSize: 17, fontWeight: 900 },
+  sectionSub: { margin: "3px 0 0", fontSize: 10, color: "#94a3b8" },
+  loading: { minHeight: 260, display: "flex", alignItems: "center", justifyContent: "center", gap: 9, color: "#64748b", fontSize: 12, fontWeight: 700 },
+  empty: { minHeight: 260, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center", gap: 8 },
+  emptyTitle: { margin: 0, fontSize: 15, fontWeight: 900 },
+  emptyText: { margin: 0, maxWidth: 420, fontSize: 11, lineHeight: 1.6, color: "#64748b" },
+  grid: { display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 13 },
+  animalCard: { border: "1px solid #e2e8f0", borderRadius: 17, padding: 15, background: "#fbfdfc" },
+  animalTop: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  avatar: { width: 42, height: 42, borderRadius: 13, background: "#ecfdf5", color: "#047857", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 16 },
+  iconButton: { width: 33, height: 33, border: "1px solid #e2e8f0", borderRadius: 10, background: "#fff", color: "#64748b", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" },
+  animalName: { margin: "13px 0 4px", fontSize: 17, fontWeight: 900 },
+  species: { margin: 0, fontSize: 11, color: "#64748b", fontWeight: 700 },
+  metaRow: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 11 },
+  tag: { display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 8px", borderRadius: 9, background: "#f1f5f9", color: "#475569", fontSize: 10, fontWeight: 700 },
+  statusRow: { marginTop: 14, paddingTop: 12, borderTop: "1px solid #edf2ef", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  status: { display: "inline-flex", padding: "6px 8px", borderRadius: 999, fontSize: 9, fontWeight: 900 },
+  idText: { fontSize: 9, color: "#94a3b8", fontWeight: 800 },
+  overlay: { position: "fixed", inset: 0, background: "rgba(15,23,42,.48)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 15, zIndex: 1000 },
+  modal: { width: "100%", maxWidth: 680, maxHeight: "92vh", overflowY: "auto", background: "#fff", borderRadius: 22, boxShadow: "0 30px 80px rgba(15,23,42,.22)" },
+  modalHead: { display: "flex", justifyContent: "space-between", gap: 15, padding: "18px 19px", borderBottom: "1px solid #e2e8f0" },
+  modalTitle: { margin: 0, fontSize: 18, fontWeight: 900 },
+  modalSub: { margin: "4px 0 0", color: "#64748b", fontSize: 10 },
+  formGrid: { display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 13, padding: 19 },
+  field: { display: "flex", flexDirection: "column", gap: 6 },
+  fieldLabel: { fontSize: 10, color: "#475569", fontWeight: 800 },
+  formInput: { width: "100%", boxSizing: "border-box", border: "1px solid #dbe5df", borderRadius: 10, padding: "10px 11px", outline: 0, fontSize: 11, background: "#fbfdfc" },
+  modalActions: { display: "flex", justifyContent: "flex-end", gap: 8, padding: "0 19px 19px" },
+};

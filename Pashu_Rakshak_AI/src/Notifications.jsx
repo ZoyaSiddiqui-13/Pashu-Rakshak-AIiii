@@ -1,910 +1,715 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Bell,
-  AlertTriangle,
-  Stethoscope,
-  FlaskConical,
-  Syringe,
-  ClipboardList,
   CheckCircle2,
-  Check,
-  X,
-  ArrowRight,
+  RefreshCw,
+  ShieldAlert,
+  Stethoscope,
+  ClipboardList,
+  Info,
+  AlertTriangle,
   Clock3,
-  Trash2,
+  Search,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 
-const initialNotifications = [
-  {
-    id: 1,
-    type: "critical",
-    title: "Critical health alert",
-    message:
-      "Respiratory symptoms detected in Raja (AN-1027). Immediate veterinarian review is recommended.",
-    time: "12 min ago",
-    page: "/veterinarian",
-    read: false,
-  },
-  {
-    id: 2,
-    type: "vet",
-    title: "Veterinarian review pending",
-    message:
-      "Case CS-2048 has been assigned to Dr. Mehta and is waiting for clinical review.",
-    time: "1 hour ago",
-    page: "/veterinarian",
-    read: false,
-  },
-  {
-    id: 3,
-    type: "lab",
-    title: "Lab report available",
-    message:
-      "Blood test report for case CS-2047 is now available for review.",
-    time: "3 hours ago",
-    page: "/laboratory",
-    read: false,
-  },
-  {
-    id: 4,
-    type: "vaccination",
-    title: "Vaccination reminder",
-    message:
-      "12 animals in Pune are due for vaccination tomorrow.",
-    time: "5 hours ago",
-    page: "/vaccination",
-    read: true,
-  },
-  {
-    id: 5,
-    type: "case",
-    title: "Case status updated",
-    message:
-      "Case CS-2046 has moved to laboratory testing.",
-    time: "Yesterday",
-    page: "/cases",
-    read: true,
-  },
-  {
-    id: 6,
-    type: "alert",
-    title: "Possible outbreak cluster",
-    message:
-      "Four related respiratory cases have been detected in Satara district.",
-    time: "Yesterday",
-    page: "/outbreaks",
-    read: true,
-  },
-];
+const API_BASE =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
-const iconMap = {
-  critical: AlertTriangle,
-  vet: Stethoscope,
-  lab: FlaskConical,
-  vaccination: Syringe,
-  case: ClipboardList,
-  alert: Bell,
-};
+function getToken() {
+  return localStorage.getItem("pashuAccessToken") || "";
+}
+
+async function loadNotifications(unreadOnly = false) {
+  const token = getToken();
+
+  const response = await fetch(
+    `${API_BASE}/api/notifications?unread_only=${unreadOnly}`,
+    {
+      headers: {
+        Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    }
+  );
+
+  if (response.status === 401) {
+    localStorage.removeItem("pashuAccessToken");
+    localStorage.removeItem("pashuUser");
+    localStorage.removeItem("pashuAllowedRole");
+    localStorage.removeItem("pashuRole");
+    window.location.href = "/login";
+    throw new Error("Session expired. Please login again.");
+  }
+
+  if (!response.ok) {
+    let message = "Could not load notifications.";
+    try {
+      const body = await response.json();
+      message = body.detail || message;
+    } catch {
+      // Keep default error.
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+function normalizeItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getTypeData(type) {
+  const value = String(type || "info").toLowerCase();
+
+  if (value === "escalation") {
+    return {
+      label: "Escalation",
+      className: "notification-critical",
+      icon: ShieldAlert,
+    };
+  }
+
+  if (value === "case") {
+    return {
+      label: "Case",
+      className: "notification-case",
+      icon: ClipboardList,
+    };
+  }
+
+  if (value === "alert") {
+    return {
+      label: "Alert",
+      className: "notification-high",
+      icon: AlertTriangle,
+    };
+  }
+
+  if (value === "success") {
+    return {
+      label: "Success",
+      className: "notification-success",
+      icon: CheckCircle2,
+    };
+  }
+
+  return {
+    label: "Information",
+    className: "notification-info",
+    icon: Info,
+  };
+}
 
 function Notifications() {
-  const navigate = useNavigate();
+  const [items, setItems] = useState([]);
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
 
-  const [notifications, setNotifications] =
-    useState(initialNotifications);
+  async function refresh(firstLoad = false) {
+    try {
+      setError("");
 
-  const [filter, setFilter] = useState("all");
-
-  const unreadCount = notifications.filter(
-    (item) => !item.read
-  ).length;
-
-  const criticalCount = notifications.filter(
-    (item) =>
-      item.type === "critical" ||
-      item.type === "alert"
-  ).length;
-
-  const filteredNotifications =
-    notifications.filter((item) => {
-      if (filter === "unread") {
-        return !item.read;
+      if (firstLoad) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
       }
 
-      if (filter === "critical") {
-        return (
-          item.type === "critical" ||
-          item.type === "alert"
-        );
-      }
+      const data = await loadNotifications(unreadOnly);
+      setItems(normalizeItems(data));
+    } catch (err) {
+      setError(err?.message || "Could not load notifications.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
 
-      return true;
+  useEffect(() => {
+    refresh(true);
+  }, [unreadOnly]);
+
+  const filteredItems = useMemo(() => {
+    const search = query.trim().toLowerCase();
+
+    if (!search) return items;
+
+    return items.filter((item) => {
+      const haystack = [
+        item?.title,
+        item?.message,
+        item?.notification_type,
+        item?.case_id,
+        item?.target_role,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(search);
     });
+  }, [items, query]);
 
-  const markAsRead = (id) => {
-    setNotifications((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, read: true }
-          : item
-      )
-    );
-  };
-
-  const markAllAsRead = () => {
-    setNotifications((prev) =>
-      prev.map((item) => ({
-        ...item,
-        read: true,
-      }))
-    );
-  };
-
-  const deleteNotification = (id) => {
-    setNotifications((prev) =>
-      prev.filter((item) => item.id !== id)
-    );
-  };
-
-  const openNotification = (item) => {
-    markAsRead(item.id);
-    navigate(item.page);
-  };
+  const unreadCount = items.filter((item) => item?.read === false).length;
 
   return (
     <>
       <style>{`
-        .notification-page {
-          width: 100%;
-          max-width: 1180px;
+        .notifications-page {
+          max-width: 1100px;
           margin: 0 auto;
-          padding-bottom: 30px;
+          padding-bottom: 35px;
+          color: #173e35;
         }
 
-        .notification-hero {
+        .notifications-page * {
+          box-sizing: border-box;
+        }
+
+        .notifications-header {
           display: flex;
-          align-items: center;
           justify-content: space-between;
-          gap: 20px;
-          margin-bottom: 22px;
+          align-items: flex-start;
+          gap: 18px;
+          margin-bottom: 18px;
         }
 
-        .notification-hero h1 {
-          margin: 0 0 7px;
-          font-size: 30px;
-          letter-spacing: -0.5px;
-        }
-
-        .notification-hero p {
+        .notifications-header h1 {
           margin: 0;
-          color: #6b7b75;
-          font-size: 14px;
+          font-size: 29px;
+          color: #173e35;
         }
 
-        .notification-hero-actions {
+        .notifications-header p {
+          margin: 7px 0 0;
+          color: #7f8e88;
+          font-size: 12px;
+          line-height: 1.55;
+        }
+
+        .notifications-actions {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 8px;
+          flex-wrap: wrap;
         }
 
-        .notification-unread-box {
+        .notifications-search {
+          height: 38px;
+          min-width: 210px;
+          border: 1px solid #dfe9e4;
+          border-radius: 9px;
+          background: #fff;
+          padding: 0 11px;
+          outline: none;
+          color: #39584f;
+          font-size: 10px;
+        }
+
+        .notifications-search-wrap {
           display: flex;
           align-items: center;
-          gap: 11px;
-          padding: 10px 15px;
-          background: #ffffff;
-          border: 1px solid #e2ebe7;
-          border-radius: 12px;
-          box-shadow: 0 5px 18px rgba(22, 65, 53, 0.06);
+          gap: 7px;
+          padding-left: 10px;
+          border: 1px solid #dfe9e4;
+          border-radius: 9px;
+          background: #fff;
         }
 
-        .notification-unread-icon {
-          width: 36px;
+        .notifications-search-wrap svg {
+          color: #91a19a;
+          flex: 0 0 auto;
+        }
+
+        .notifications-search-wrap input {
+          border: 0;
+          outline: 0;
           height: 36px;
-          display: grid;
-          place-items: center;
-          border-radius: 10px;
-          background: #f0f9d8;
-          color: #275b4e;
+          width: 185px;
+          font-size: 10px;
+          color: #39584f;
         }
 
-        .notification-unread-box strong {
-          display: block;
-          font-size: 18px;
-          line-height: 18px;
-          color: #173e34;
-        }
-
-        .notification-unread-box span {
-          display: block;
-          margin-top: 3px;
-          font-size: 11px;
-          color: #7b8c85;
-        }
-
-        .notification-mark-all {
-          border: 1px solid #d8e4df;
-          background: #ffffff;
-          color: #164d40;
-          border-radius: 10px;
-          padding: 10px 14px;
+        .notifications-button {
+          height: 38px;
+          border: 1px solid #dfe9e4;
+          border-radius: 9px;
+          background: #fff;
+          color: #54736a;
+          padding: 0 11px;
           display: inline-flex;
           align-items: center;
           gap: 7px;
           cursor: pointer;
-          font-weight: 700;
-          font-size: 13px;
-          transition: 0.2s ease;
+          font-size: 9px;
+          font-weight: 850;
         }
 
-        .notification-mark-all:hover {
-          background: #f1f8f5;
-          transform: translateY(-1px);
+        .notifications-button.active {
+          background: #eef6e2;
+          border-color: #dbe9ce;
+          color: #5f8435;
         }
 
-        .notification-stats {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 14px;
-          margin-bottom: 18px;
-        }
-
-        .notification-stat {
-          background: #ffffff;
-          border: 1px solid #e4ece8;
-          border-radius: 14px;
-          padding: 17px;
-          display: flex;
-          align-items: center;
-          gap: 13px;
-          box-shadow: 0 5px 18px rgba(22, 65, 53, 0.045);
-        }
-
-        .notification-stat-icon {
-          width: 42px;
-          height: 42px;
-          border-radius: 12px;
+        .notifications-refresh {
+          width: 38px;
+          height: 38px;
+          border: 1px solid #dfe9e4;
+          border-radius: 9px;
+          background: #fff;
+          color: #54736a;
           display: grid;
           place-items: center;
-        }
-
-        .notification-stat-icon.red {
-          background: #fff0f0;
-          color: #dc3c3c;
-        }
-
-        .notification-stat-icon.blue {
-          background: #edf5ff;
-          color: #3777c9;
-        }
-
-        .notification-stat-icon.amber {
-          background: #fff7e7;
-          color: #c98920;
-        }
-
-        .notification-stat-icon.green {
-          background: #eff9e0;
-          color: #6c9d22;
-        }
-
-        .notification-stat span {
-          display: block;
-          color: #71817b;
-          font-size: 12px;
-        }
-
-        .notification-stat strong {
-          display: block;
-          margin-top: 2px;
-          color: #183e35;
-          font-size: 22px;
-        }
-
-        .notification-stat small {
-          display: block;
-          margin-top: 2px;
-          color: #8a9994;
-          font-size: 11px;
-        }
-
-        .notification-panel {
-          background: #ffffff;
-          border: 1px solid #e3ebe7;
-          border-radius: 16px;
-          overflow: hidden;
-          box-shadow: 0 7px 25px rgba(20, 67, 54, 0.055);
-        }
-
-        .notification-toolbar {
-          padding: 14px 18px;
-          border-bottom: 1px solid #e8efec;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .notification-filters {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-        }
-
-        .notification-filter {
-          border: 0;
-          background: transparent;
-          color: #687b74;
-          padding: 8px 12px;
-          border-radius: 8px;
           cursor: pointer;
-          font-size: 13px;
-          font-weight: 700;
         }
 
-        .notification-filter span {
-          margin-left: 5px;
-          padding: 2px 6px;
-          border-radius: 999px;
-          background: #edf2ef;
-          color: #66756f;
+        .notifications-refresh.spinning svg {
+          animation: notification-spin .75s linear infinite;
+        }
+
+        @keyframes notification-spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .notifications-summary {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 12px;
+          margin-bottom: 15px;
+        }
+
+        .notification-summary-card {
+          background: #fff;
+          border: 1px solid #e1ebe7;
+          border-radius: 13px;
+          padding: 14px;
+        }
+
+        .notification-summary-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          display: grid;
+          place-items: center;
+          background: #eef5e4;
+          color: #698f38;
+        }
+
+        .notification-summary-card strong {
+          display: block;
+          margin-top: 11px;
+          font-size: 22px;
+          color: #2a5045;
+        }
+
+        .notification-summary-card span {
+          display: block;
+          margin-top: 5px;
+          font-size: 10px;
+          color: #7d8d86;
+        }
+
+        .notifications-error {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 14px;
+          padding: 11px 13px;
+          border: 1px solid #f0d7d3;
+          border-radius: 10px;
+          background: #fff2f0;
+          color: #a84f46;
           font-size: 10px;
         }
 
-        .notification-filter:hover {
-          background: #f5f8f7;
+        .notifications-error button {
+          margin-left: auto;
+          border: 0;
+          border-radius: 7px;
+          background: #a84f46;
+          color: #fff;
+          padding: 6px 9px;
+          cursor: pointer;
+          font-size: 9px;
+          font-weight: 800;
         }
 
-        .notification-filter.active {
-          background: #ecf7d1;
-          color: #174d40;
+        .notifications-card {
+          background: #fff;
+          border: 1px solid #e1ebe7;
+          border-radius: 14px;
+          overflow: hidden;
         }
 
-        .notification-filter.active span {
-          background: #d8efa0;
-          color: #285d50;
+        .notifications-card-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          padding: 15px 17px;
+          border-bottom: 1px solid #edf2ef;
+        }
+
+        .notifications-card-head h2 {
+          margin: 0;
+          color: #274b41;
+          font-size: 15px;
+        }
+
+        .notifications-card-head p {
+          margin: 4px 0 0;
+          color: #8b9893;
+          font-size: 9px;
         }
 
         .notification-list {
-          display: flex;
-          flex-direction: column;
+          padding: 5px 16px 8px;
         }
 
         .notification-item {
-          position: relative;
           display: grid;
-          grid-template-columns: 48px 1fr auto;
-          gap: 14px;
-          padding: 18px 20px;
-          border-bottom: 1px solid #edf1ef;
-          transition: background 0.2s ease;
+          grid-template-columns: 43px 1fr auto;
+          gap: 11px;
+          align-items: start;
+          padding: 13px 0;
+          border-bottom: 1px solid #edf2ef;
         }
 
         .notification-item:last-child {
           border-bottom: 0;
         }
 
-        .notification-item:hover {
-          background: #fbfdfc;
-        }
-
-        .notification-item.unread {
-          background: #fbfff8;
-        }
-
-        .notification-item.unread:hover {
-          background: #f7fdec;
-        }
-
         .notification-icon {
-          width: 44px;
-          height: 44px;
-          border-radius: 13px;
+          width: 43px;
+          height: 43px;
           display: grid;
           place-items: center;
+          border-radius: 11px;
         }
 
-        .notification-icon.critical {
-          background: #fff0f0;
-          color: #df4141;
+        .notification-critical {
+          background: #ffe8e5;
+          color: #b4493f;
         }
 
-        .notification-icon.vet {
-          background: #edf5ff;
-          color: #3979ca;
+        .notification-case {
+          background: #eef6e2;
+          color: #658735;
         }
 
-        .notification-icon.lab {
-          background: #fff6e7;
-          color: #bf8423;
+        .notification-high {
+          background: #fff0df;
+          color: #b97625;
         }
 
-        .notification-icon.vaccination {
-          background: #f0f8df;
-          color: #6b9727;
-        }
-
-        .notification-icon.case {
-          background: #f2efff;
-          color: #7157bd;
-        }
-
-        .notification-icon.alert {
-          background: #fff1e8;
-          color: #d66d27;
-        }
-
-        .notification-content {
-          cursor: pointer;
-          min-width: 0;
-        }
-
-        .notification-title-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .notification-title-row h3 {
-          margin: 0;
-          color: #173d34;
-          font-size: 15px;
-        }
-
-        .notification-unread-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: #8fbd2f;
-          flex: 0 0 auto;
-        }
-
-        .notification-content p {
-          margin: 7px 0 9px;
-          color: #657770;
-          font-size: 13px;
-          line-height: 1.55;
-          max-width: 800px;
-        }
-
-        .notification-meta {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          color: #92a09b;
-          font-size: 11px;
-        }
-
-        .notification-time {
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-        }
-
-        .notification-open {
-          display: inline-flex;
-          align-items: center;
-          gap: 3px;
-          color: #2d6a5b;
-          font-weight: 700;
-        }
-
-        .notification-actions {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          align-self: center;
-        }
-
-        .notification-action {
-          width: 32px;
-          height: 32px;
-          border: 1px solid #dfe8e4;
-          background: #ffffff;
-          color: #63746d;
-          border-radius: 8px;
-          display: grid;
-          place-items: center;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .notification-action:hover {
-          background: #f2f7f4;
-          color: #245b4d;
-        }
-
-        .notification-action.delete:hover {
-          background: #fff1f1;
-          color: #d53e3e;
-          border-color: #ffd5d5;
-        }
-
-        .notification-empty {
-          padding: 70px 20px;
-          text-align: center;
-          color: #7b8c85;
-        }
-
-        .notification-empty svg {
-          color: #7fac35;
-          margin-bottom: 8px;
-        }
-
-        .notification-empty h3 {
-          margin: 5px 0;
-          color: #234b40;
-        }
-
-        .notification-empty p {
-          margin: 0;
-          font-size: 13px;
+        .notification-success {
+          background: #e9f7ed;
+          color: #3f8a58;
         }
 
         .notification-info {
-          margin-top: 16px;
-          padding: 17px 19px;
-          border-radius: 14px;
-          border: 1px solid #dce9c5;
-          background: linear-gradient(
-            135deg,
-            #f8fce9,
-            #f2f9df
-          );
+          background: #e9f2f8;
+          color: #38718f;
+        }
+
+        .notification-main strong {
           display: flex;
-          gap: 13px;
-          align-items: flex-start;
-          color: #315f4e;
+          align-items: center;
+          gap: 7px;
+          color: #35564d;
+          font-size: 11px;
         }
 
-        .notification-info svg {
-          margin-top: 2px;
-          flex: 0 0 auto;
-        }
-
-        .notification-info b {
-          display: block;
-          font-size: 14px;
-        }
-
-        .notification-info p {
+        .notification-main p {
           margin: 5px 0 0;
-          color: #65796f;
-          font-size: 12px;
-          line-height: 1.5;
+          max-width: 680px;
+          color: #7c8b85;
+          font-size: 10px;
+          line-height: 1.55;
         }
 
-        @media (max-width: 900px) {
-          .notification-stats {
-            grid-template-columns: repeat(2, 1fr);
+        .notification-meta {
+          text-align: right;
+        }
+
+        .notification-type {
+          display: inline-block;
+          padding: 4px 7px;
+          border-radius: 999px;
+          background: #f3f6f4;
+          color: #72837b;
+          font-size: 7px;
+          font-weight: 900;
+        }
+
+        .notification-time {
+          display: block;
+          margin-top: 6px;
+          color: #a0aaa6;
+          font-size: 8px;
+          white-space: nowrap;
+        }
+
+        .notification-unread {
+          display: inline-block;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #739d42;
+        }
+
+        .notification-empty,
+        .notification-loading {
+          padding: 50px 20px;
+          text-align: center;
+          color: #93a09b;
+          font-size: 10px;
+        }
+
+        .notification-empty svg,
+        .notification-loading svg {
+          display: block;
+          margin: 0 auto 9px;
+        }
+
+        .notification-loading svg {
+          animation: notification-spin 1s linear infinite;
+        }
+
+        .notifications-note {
+          margin-top: 13px;
+          padding: 10px 12px;
+          border-radius: 9px;
+          background: #f2f6ec;
+          color: #74836e;
+          font-size: 8px;
+          line-height: 1.55;
+        }
+
+        @media (max-width: 850px) {
+          .notifications-header {
+            flex-direction: column;
           }
 
-          .notification-hero {
-            align-items: flex-start;
-            flex-direction: column;
+          .notifications-actions {
+            width: 100%;
+          }
+
+          .notifications-search-wrap {
+            flex: 1;
+          }
+
+          .notifications-search-wrap input {
+            width: 100%;
           }
         }
 
         @media (max-width: 650px) {
-          .notification-page {
-            padding-bottom: 20px;
-          }
-
-          .notification-stats {
+          .notifications-summary {
             grid-template-columns: 1fr;
           }
 
-          .notification-hero-actions {
-            width: 100%;
-            justify-content: space-between;
-          }
-
           .notification-item {
-            grid-template-columns: 42px 1fr;
-            padding: 15px;
+            grid-template-columns: 40px 1fr;
           }
 
-          .notification-icon {
-            width: 40px;
-            height: 40px;
-          }
-
-          .notification-actions {
+          .notification-meta {
             grid-column: 2;
-            justify-content: flex-start;
-          }
-
-          .notification-toolbar {
-            overflow-x: auto;
-          }
-
-          .notification-filters {
-            min-width: max-content;
-          }
-
-          .notification-hero h1 {
-            font-size: 25px;
+            text-align: left;
           }
         }
       `}</style>
 
-      <div className="notification-page">
-
-        {/* HEADER */}
-
-        <div className="notification-hero">
+      <div className="notifications-page">
+        <div className="notifications-header">
           <div>
-            <h1>Notifications</h1>
-
+            <h1>Notifications & Alerts</h1>
             <p>
-              Alerts, case updates, veterinarian responses,
-              lab reports and reminders.
+              Live role-based notifications from the FastAPI + MongoDB
+              notification service.
             </p>
           </div>
 
-          <div className="notification-hero-actions">
-
-            <div className="notification-unread-box">
-              <div className="notification-unread-icon">
-                <Bell size={18} />
-              </div>
-
-              <div>
-                <strong>{unreadCount}</strong>
-                <span>Unread</span>
-              </div>
+          <div className="notifications-actions">
+            <div className="notifications-search-wrap">
+              <Search size={15} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search notifications..."
+              />
             </div>
 
-            {unreadCount > 0 && (
-              <button
-                className="notification-mark-all"
-                onClick={markAllAsRead}
-              >
-                <Check size={15} />
-                Mark all as read
-              </button>
-            )}
+            <button
+              className={`notifications-button ${
+                unreadOnly ? "active" : ""
+              }`}
+              onClick={() => setUnreadOnly((value) => !value)}
+            >
+              <Bell size={15} />
+              {unreadOnly ? "Unread only" : "All notifications"}
+            </button>
 
+            <button
+              className={`notifications-refresh ${
+                refreshing ? "spinning" : ""
+              }`}
+              onClick={() => refresh(false)}
+              disabled={refreshing}
+              title="Refresh"
+            >
+              <RefreshCw size={16} />
+            </button>
           </div>
         </div>
 
-        {/* STATS */}
+        {error && (
+          <div className="notifications-error">
+            <AlertTriangle size={17} />
+            <span>{error}</span>
+            <button onClick={() => refresh(true)}>Retry</button>
+          </div>
+        )}
 
-        <div className="notification-stats">
-
-          <div className="notification-stat">
-            <div className="notification-stat-icon red">
-              <AlertTriangle size={19} />
+        <div className="notifications-summary">
+          <div className="notification-summary-card">
+            <div className="notification-summary-icon">
+              <Bell size={17} />
             </div>
-
-            <div>
-              <span>Critical Alerts</span>
-              <strong>{criticalCount}</strong>
-              <small>Immediate attention</small>
-            </div>
+            <strong>{items.length}</strong>
+            <span>Loaded notifications</span>
           </div>
 
-          <div className="notification-stat">
-            <div className="notification-stat-icon blue">
-              <Stethoscope size={19} />
+          <div className="notification-summary-card">
+            <div className="notification-summary-icon">
+              <AlertTriangle size={17} />
             </div>
-
-            <div>
-              <span>Vet Updates</span>
-              <strong>3</strong>
-              <small>Review required</small>
-            </div>
+            <strong>{unreadCount}</strong>
+            <span>Unread notifications</span>
           </div>
 
-          <div className="notification-stat">
-            <div className="notification-stat-icon amber">
-              <FlaskConical size={19} />
+          <div className="notification-summary-card">
+            <div className="notification-summary-icon">
+              <Stethoscope size={17} />
             </div>
-
-            <div>
-              <span>Lab Updates</span>
-              <strong>1</strong>
-              <small>Report available</small>
-            </div>
+            <strong>
+              {
+                items.filter(
+                  (item) =>
+                    String(item?.notification_type || "").toLowerCase() ===
+                    "case"
+                ).length
+              }
+            </strong>
+            <span>Case-related notifications</span>
           </div>
-
-          <div className="notification-stat">
-            <div className="notification-stat-icon green">
-              <Syringe size={19} />
-            </div>
-
-            <div>
-              <span>Reminders</span>
-              <strong>8</strong>
-              <small>This week</small>
-            </div>
-          </div>
-
         </div>
 
-        {/* NOTIFICATION PANEL */}
-
-        <div className="notification-panel">
-
-          <div className="notification-toolbar">
-
-            <div className="notification-filters">
-
-              <button
-                className={
-                  filter === "all"
-                    ? "notification-filter active"
-                    : "notification-filter"
-                }
-                onClick={() => setFilter("all")}
-              >
-                All
-                <span>{notifications.length}</span>
-              </button>
-
-              <button
-                className={
-                  filter === "unread"
-                    ? "notification-filter active"
-                    : "notification-filter"
-                }
-                onClick={() => setFilter("unread")}
-              >
-                Unread
-                <span>{unreadCount}</span>
-              </button>
-
-              <button
-                className={
-                  filter === "critical"
-                    ? "notification-filter active"
-                    : "notification-filter"
-                }
-                onClick={() => setFilter("critical")}
-              >
-                Critical
-                <span>{criticalCount}</span>
-              </button>
-
+        <section className="notifications-card">
+          <div className="notifications-card-head">
+            <div>
+              <h2>Recent Notifications</h2>
+              <p>
+                {unreadOnly
+                  ? "Showing unread notifications only."
+                  : "Showing notifications available for your role."}
+              </p>
             </div>
 
+            <span style={{ color: "#789086", fontSize: 9 }}>
+              {filteredItems.length} shown
+            </span>
           </div>
 
           <div className="notification-list">
-
-            {filteredNotifications.length === 0 ? (
-
-              <div className="notification-empty">
-                <CheckCircle2 size={44} />
-
-                <h3>
-                  You're all caught up
-                </h3>
-
-                <p>
-                  There are no notifications matching this filter.
-                </p>
+            {loading ? (
+              <div className="notification-loading">
+                <RefreshCw size={25} />
+                <div>Loading notifications from MongoDB...</div>
               </div>
-
+            ) : filteredItems.length === 0 ? (
+              <div className="notification-empty">
+                <CheckCircle2 size={27} />
+                <div>
+                  {query
+                    ? "No notifications match your search."
+                    : "No notifications found."}
+                </div>
+              </div>
             ) : (
-
-              filteredNotifications.map((item) => {
-
-                const Icon =
-                  iconMap[item.type] || Bell;
+              filteredItems.map((item) => {
+                const typeData = getTypeData(item.notification_type);
+                const TypeIcon = typeData.icon;
 
                 return (
-                  <div
-                    key={item.id}
-                    className={`notification-item ${
-                      item.read ? "read" : "unread"
-                    }`}
-                  >
-
-                    {/* ICON */}
-
+                  <article className="notification-item" key={item.id}>
                     <div
-                      className={`notification-icon ${item.type}`}
+                      className={`notification-icon ${typeData.className}`}
                     >
-                      <Icon size={20} />
+                      <TypeIcon size={20} />
                     </div>
 
-                    {/* CONTENT */}
-
-                    <div
-                      className="notification-content"
-                      onClick={() =>
-                        openNotification(item)
-                      }
-                    >
-
-                      <div className="notification-title-row">
-
-                        <h3>
-                          {item.title}
-                        </h3>
-
-                        {!item.read && (
-                          <span className="notification-unread-dot"></span>
+                    <div className="notification-main">
+                      <strong>
+                        {item.read === false && (
+                          <span className="notification-unread" />
                         )}
+                        {item.title || "Notification"}
+                      </strong>
 
-                      </div>
-
-                      <p>
-                        {item.message}
-                      </p>
-
-                      <div className="notification-meta">
-
-                        <span className="notification-time">
-                          <Clock3 size={12} />
-                          {item.time}
-                        </span>
-
-                        <span className="notification-open">
-                          Open
-                          <ArrowRight size={13} />
-                        </span>
-
-                      </div>
-
+                      <p>{item.message || "New system update."}</p>
                     </div>
 
-                    {/* ACTIONS */}
+                    <div className="notification-meta">
+                      <span className="notification-type">
+                        {typeData.label}
+                      </span>
 
-                    <div className="notification-actions">
-
-                      {!item.read && (
-                        <button
-                          className="notification-action"
-                          title="Mark as read"
-                          onClick={() =>
-                            markAsRead(item.id)
-                          }
-                        >
-                          <Check size={15} />
-                        </button>
-                      )}
-
-                      <button
-                        className="notification-action delete"
-                        title="Delete notification"
-                        onClick={() =>
-                          deleteNotification(item.id)
-                        }
-                      >
-                        <Trash2 size={15} />
-                      </button>
-
+                      <span className="notification-time">
+                        <Clock3
+                          size={10}
+                          style={{ verticalAlign: "middle", marginRight: 3 }}
+                        />
+                        {formatDate(item.created_at)}
+                      </span>
                     </div>
-
-                  </div>
+                  </article>
                 );
               })
             )}
-
           </div>
+        </section>
+
+        <div className="notifications-note">
+          Notifications are filtered on the backend according to the logged-in
+          user's role. This screen reads live data from the notification API;
+          clinical alerts remain decision-support signals and should be reviewed
+          by the appropriate veterinary or administrative role.
         </div>
-
-        {/* INFO */}
-
-        <div className="notification-info">
-
-          <Bell size={20} />
-
-          <div>
-            <b>
-              Early-warning notification system
-            </b>
-
-            <p>
-              Notifications can be generated from AI screening,
-              critical risk cases, veterinarian reviews, laboratory
-              reports, vaccination schedules and follow-up events.
-            </p>
-          </div>
-
-        </div>
-
       </div>
     </>
   );

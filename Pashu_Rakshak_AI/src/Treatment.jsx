@@ -1,1308 +1,837 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Pill,
-  Search,
-  Plus,
-  CheckCircle2,
-  Clock3,
-  AlertTriangle,
   CalendarDays,
-  PawPrint,
-  Stethoscope,
-  MapPin,
-  X,
-  FileText,
+  CheckCircle2,
+  Plus,
+  Search,
+  Syringe,
 } from "lucide-react";
+import api from "./api";
 
-function Treatment() {
+const pageStyle = {
+  maxWidth: 1200,
+  margin: "0 auto",
+  padding: "20px 0 50px",
+};
+
+const cardStyle = {
+  background: "#ffffff",
+  border: "1px solid #e5e7eb",
+  borderRadius: 18,
+  padding: 18,
+  boxShadow: "0 8px 24px rgba(15, 23, 42, 0.05)",
+};
+
+const buttonStyle = {
+  border: "none",
+  borderRadius: 10,
+  padding: "10px 14px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const inputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "11px 12px",
+  border: "1px solid #d1d5db",
+  borderRadius: 10,
+  outline: "none",
+  background: "#ffffff",
+};
+
+const labelStyle = {
+  display: "block",
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#475569",
+  marginBottom: 6,
+};
+
+function formatDate(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString();
+}
+
+export default function Vaccination() {
+  const [items, setItems] = useState([]);
+  const [animals, setAnimals] = useState([]);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("All");
-  const [selected, setSelected] = useState(null);
-  const [showAdd, setShowAdd] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [open, setOpen] = useState(false);
 
-  const [treatments, setTreatments] = useState([
-    {
-      id: "TRT-601",
-      caseId: "CS-2048",
-      animal: "Raja",
-      animalId: "AN-1027",
-      location: "Ahmednagar",
-      condition: "Respiratory infection suspected",
-      medicine: "Supportive respiratory treatment",
-      dosage: "As prescribed",
-      frequency: "Twice daily",
-      vet: "Dr. Mehta",
-      startDate: "Sep 27, 2026",
-      followUp: "Sep 30, 2026",
-      status: "Active",
-      notes: "Monitor breathing, appetite and temperature.",
-    },
-    {
-      id: "TRT-600",
-      caseId: "CS-2047",
-      animal: "Laxmi",
-      animalId: "AN-1026",
-      location: "Satara",
-      condition: "Fever / inflammation",
-      medicine: "Supportive therapy",
-      dosage: "As prescribed",
-      frequency: "Once daily",
-      vet: "Dr. Patil",
-      startDate: "Sep 26, 2026",
-      followUp: "Sep 29, 2026",
-      status: "Active",
-      notes: "Review laboratory findings during follow-up.",
-    },
-    {
-      id: "TRT-599",
-      caseId: "CS-2046",
-      animal: "Moti",
-      animalId: "AN-1025",
-      location: "Pune",
-      condition: "Fever",
-      medicine: "Supportive treatment",
-      dosage: "As prescribed",
-      frequency: "Twice daily",
-      vet: "Dr. Shah",
-      startDate: "Sep 24, 2026",
-      followUp: "Sep 28, 2026",
-      status: "Follow-up Due",
-      notes: "Follow-up examination pending.",
-    },
-    {
-      id: "TRT-598",
-      caseId: "CS-2045",
-      animal: "Gauri",
-      animalId: "AN-1024",
-      location: "Nashik",
-      condition: "Parasite screening",
-      medicine: "Veterinary treatment",
-      dosage: "As prescribed",
-      frequency: "Once daily",
-      vet: "Dr. Mehta",
-      startDate: "Sep 20, 2026",
-      followUp: "Sep 27, 2026",
-      status: "Completed",
-      notes: "Treatment completed and health status improved.",
-    },
-    {
-      id: "TRT-597",
-      caseId: "CS-2044",
-      animal: "Kali",
-      animalId: "AN-1028",
-      location: "Solapur",
-      condition: "Routine treatment",
-      medicine: "Supportive care",
-      dosage: "As prescribed",
-      frequency: "Once daily",
-      vet: "Dr. Patil",
-      startDate: "Sep 18, 2026",
-      followUp: "Sep 22, 2026",
-      status: "Completed",
-      notes: "No further treatment required.",
-    },
-  ]);
+  const [form, setForm] = useState({
+    animal_id: "",
+    vaccine: "",
+    date: new Date().toISOString().slice(0, 10),
+    next_due_date: "",
+    status: "Scheduled",
+  });
 
-  const counts = {
-    total: treatments.length,
-    active: treatments.filter(
-      (x) => x.status === "Active"
-    ).length,
-    followUp: treatments.filter(
-      (x) => x.status === "Follow-up Due"
-    ).length,
-    completed: treatments.filter(
-      (x) => x.status === "Completed"
-    ).length,
-  };
+  async function loadData() {
+    setLoading(true);
+    setError("");
 
-  const filteredTreatments = useMemo(() => {
-    return treatments.filter((item) => {
-      const text = (
-        item.id +
-        " " +
-        item.caseId +
-        " " +
-        item.animal +
-        " " +
-        item.animalId +
-        " " +
-        item.location +
-        " " +
-        item.condition +
-        " " +
-        item.medicine +
-        " " +
-        item.vet
-      ).toLowerCase();
+    try {
+      const [vaccinationResponse, animalResponse] = await Promise.all([
+        api.vaccinations.list(),
+        api.animals.list(),
+      ]);
 
-      const matchesSearch = text.includes(
-        search.toLowerCase()
+      setItems(vaccinationResponse?.items || []);
+      setAnimals(animalResponse?.items || []);
+    } catch (err) {
+      setError(
+        err?.message || "Unable to load vaccination records."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    if (!q) {
+      return items;
+    }
+
+    return items.filter((item) => {
+      const animal = animals.find(
+        (animalItem) => animalItem.id === item.animal_id
       );
 
-      const matchesFilter =
-        filter === "All" ||
-        item.status === filter;
+      const text = [
+        item?.vaccine,
+        item?.status,
+        item?.animal_id,
+        animal?.name,
+        animal?.species,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
 
-      return matchesSearch && matchesFilter;
+      return text.includes(q);
     });
-  }, [treatments, search, filter]);
+  }, [items, animals, search]);
 
-  function statusClass(status) {
-    if (status === "Follow-up Due") return "followup";
-    if (status === "Completed") return "completed";
-    return "active";
-  }
+  const totalCount = items.length;
 
-  function statusIcon(status) {
-    if (status === "Follow-up Due") {
-      return <AlertTriangle size={14} />;
-    }
+  const completedCount = items.filter(
+    (item) => item.status === "Completed"
+  ).length;
 
-    if (status === "Completed") {
-      return <CheckCircle2 size={14} />;
-    }
+  const scheduledCount = items.filter(
+    (item) => item.status !== "Completed"
+  ).length;
 
-    return <Clock3 size={14} />;
-  }
+  const dueDateCount = items.filter(
+    (item) => item.next_due_date
+  ).length;
 
-  function markCompleted(id) {
-    setTreatments((current) =>
-      current.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              status: "Completed",
-            }
-          : item
-      )
+  function getAnimalName(animalId) {
+    const animal = animals.find(
+      (item) => item.id === animalId
     );
 
-    setSelected(null);
+    if (!animal) {
+      return "Unknown Animal";
+    }
+
+    return animal.name || animal.tag_id || "Animal";
   }
 
-  function addTreatment() {
-    const newTreatment = {
-      id: `TRT-${601 + treatments.length}`,
-      caseId: "CS-2050",
-      animal: "New Animal",
-      animalId: "AN-1031",
-      location: "Pune",
-      condition: "Under veterinary observation",
-      medicine: "Supportive treatment",
-      dosage: "As prescribed",
-      frequency: "Once daily",
-      vet: "Dr. Mehta",
-      startDate: "Sep 27, 2026",
-      followUp: "Oct 01, 2026",
-      status: "Active",
-      notes: "New treatment plan recorded.",
-    };
+  function resetForm() {
+    setForm({
+      animal_id: "",
+      vaccine: "",
+      date: new Date().toISOString().slice(0, 10),
+      next_due_date: "",
+      status: "Scheduled",
+    });
+  }
 
-    setTreatments((current) => [
-      newTreatment,
-      ...current,
-    ]);
+  async function handleSave() {
+    if (!form.animal_id) {
+      setError("Please select an animal.");
+      return;
+    }
 
-    setShowAdd(false);
+    if (!form.vaccine.trim()) {
+      setError("Please enter the vaccine name.");
+      return;
+    }
+
+    if (!form.date) {
+      setError("Please select the vaccination date.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      await api.vaccinations.create({
+        animal_id: form.animal_id,
+        vaccine: form.vaccine.trim(),
+        date: form.date,
+        next_due_date: form.next_due_date || null,
+        status: form.status,
+      });
+
+      setSuccess("Vaccination record saved successfully.");
+      setOpen(false);
+      resetForm();
+
+      await loadData();
+    } catch (err) {
+      setError(
+        err?.message || "Unable to save vaccination record."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleComplete(id) {
+    setError("");
+    setSuccess("");
+
+    try {
+      await api.vaccinations.update(id, {
+        status: "Completed",
+      });
+
+      setSuccess("Vaccination marked as completed.");
+      await loadData();
+    } catch (err) {
+      setError(
+        err?.message || "Unable to update vaccination."
+      );
+    }
   }
 
   return (
-    <>
-      <style>{`
-        .treatment-page {
-          max-width: 1250px;
-          margin: 0 auto;
-          padding-bottom: 35px;
-        }
-
-        .treatment-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 20px;
-          margin-bottom: 20px;
-        }
-
-        .treatment-header h1 {
-          margin: 0;
-          color: #173e35;
-          font-size: 29px;
-        }
-
-        .treatment-header p {
-          margin: 6px 0 0;
-          color: #7d8b85;
-          font-size: 12px;
-        }
-
-        .primary-btn {
-          height: 39px;
-          border: 0;
-          border-radius: 9px;
-          background: #dff46b;
-          color: #29452e;
-          padding: 0 14px;
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          cursor: pointer;
-          font-size: 10px;
-          font-weight: 900;
-        }
-
-        .treatment-stats {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 13px;
-          margin-bottom: 16px;
-        }
-
-        .treatment-stat {
-          background: #fff;
-          border: 1px solid #e2ebe7;
-          border-radius: 13px;
-          padding: 15px;
-          display: flex;
-          align-items: center;
-          gap: 11px;
-        }
-
-        .treatment-stat-icon {
-          width: 39px;
-          height: 39px;
-          border-radius: 10px;
-          display: grid;
-          place-items: center;
-          background: #eef5e4;
-          color: #6d9135;
-        }
-
-        .treatment-stat b {
-          display: block;
-          color: #284c42;
-          font-size: 19px;
-        }
-
-        .treatment-stat span {
-          color: #87938d;
-          font-size: 9px;
-        }
-
-        .treatment-toolbar {
-          background: #fff;
-          border: 1px solid #e2ebe7;
-          border-radius: 14px;
-          padding: 13px;
-          display: flex;
-          gap: 9px;
-          flex-wrap: wrap;
-          margin-bottom: 16px;
-        }
-
-        .treatment-search {
-          flex: 1;
-          min-width: 220px;
-          height: 38px;
-          border: 1px solid #dce6e1;
-          border-radius: 8px;
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 0 10px;
-          background: #fbfdfc;
-        }
-
-        .treatment-search svg {
-          color: #84928c;
-        }
-
-        .treatment-search input {
-          width: 100%;
-          border: 0;
-          outline: 0;
-          background: transparent;
-          color: #34574d;
-          font-size: 11px;
-        }
-
-        .treatment-filter {
-          height: 38px;
-          min-width: 145px;
-          border: 1px solid #dce6e1;
-          border-radius: 8px;
-          background: #fff;
-          color: #526b62;
-          padding: 0 10px;
-          outline: none;
-          font-size: 10px;
-          font-weight: 700;
-        }
-
-        .treatment-card {
-          background: #fff;
-          border: 1px solid #e2ebe7;
-          border-radius: 15px;
-          overflow: hidden;
-        }
-
-        .card-header {
-          padding: 16px;
-          border-bottom: 1px solid #e7eeeb;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .card-header h2 {
-          margin: 0;
-          color: #24483e;
-          font-size: 16px;
-        }
-
-        .card-header span {
-          color: #89958f;
-          font-size: 9px;
-        }
-
-        .table-scroll {
-          overflow-x: auto;
-        }
-
-        table {
-          width: 100%;
-          min-width: 1000px;
-          border-collapse: collapse;
-        }
-
-        th {
-          padding: 12px 14px;
-          text-align: left;
-          background: #f8faf9;
-          color: #7c8a84;
-          font-size: 8px;
-          text-transform: uppercase;
-          letter-spacing: .4px;
-        }
-
-        td {
-          padding: 13px 14px;
-          border-top: 1px solid #edf1ef;
-          color: #63766e;
-          font-size: 9px;
-        }
-
-        td strong {
-          color: #36584e;
-          font-size: 10px;
-        }
-
-        .animal-cell {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .animal-icon {
-          width: 29px;
-          height: 29px;
-          border-radius: 8px;
-          display: grid;
-          place-items: center;
-          background: #edf4e2;
-          color: #668936;
-        }
-
-        .animal-cell b {
-          display: block;
-          color: #36584e;
-          font-size: 9px;
-        }
-
-        .animal-cell span {
-          display: block;
-          color: #8a9791;
-          margin-top: 2px;
-          font-size: 7px;
-        }
-
-        .condition {
-          color: #36584e;
-          font-weight: 900;
-        }
-
-        .medicine {
-          color: #61766d;
-          font-size: 9px;
-        }
-
-        .frequency {
-          color: #89958f;
-          margin-top: 3px;
-          font-size: 8px;
-        }
-
-        .status-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          padding: 5px 8px;
-          border-radius: 999px;
-          font-size: 7px;
-          font-weight: 900;
-          white-space: nowrap;
-        }
-
-        .status-badge.active {
-          background: #fff8d9;
-          color: #89751c;
-        }
-
-        .status-badge.followup {
-          background: #fff0df;
-          color: #b36a1c;
-        }
-
-        .status-badge.completed {
-          background: #eef8df;
-          color: #5d8132;
-        }
-
-        .view-btn {
-          height: 29px;
-          border: 1px solid #dce6e1;
-          background: #fff;
-          border-radius: 7px;
-          color: #526b62;
-          padding: 0 8px;
-          cursor: pointer;
-          font-size: 8px;
-          font-weight: 800;
-        }
-
-        .complete-btn {
-          height: 29px;
-          border: 0;
-          background: #dff46b;
-          color: #29452e;
-          border-radius: 7px;
-          padding: 0 8px;
-          margin-left: 5px;
-          cursor: pointer;
-          font-size: 8px;
-          font-weight: 900;
-        }
-
-        .empty-treatment {
-          padding: 55px;
-          text-align: center;
-          color: #89958f;
-          font-size: 10px;
-        }
-
-        .modal-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(25,48,41,.4);
-          display: grid;
-          place-items: center;
-          z-index: 1000;
-          padding: 20px;
-        }
-
-        .treatment-modal {
-          width: min(570px, 100%);
-          background: #fff;
-          border-radius: 16px;
-          overflow: hidden;
-          box-shadow: 0 20px 60px rgba(20,50,40,.2);
-        }
-
-        .modal-head {
-          padding: 16px;
-          border-bottom: 1px solid #e7eeeb;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .modal-head h2 {
-          margin: 0;
-          color: #24483e;
-          font-size: 17px;
-        }
-
-        .close-btn {
-          width: 32px;
-          height: 32px;
-          border: 0;
-          background: #f3f7f5;
-          border-radius: 8px;
-          display: grid;
-          place-items: center;
-          color: #60756c;
-          cursor: pointer;
-        }
-
-        .modal-body {
-          padding: 18px;
-        }
-
-        .treatment-heading {
-          display: flex;
-          align-items: center;
-          gap: 11px;
-          margin-bottom: 15px;
-        }
-
-        .treatment-heading-icon {
-          width: 44px;
-          height: 44px;
-          border-radius: 11px;
-          background: #edf4e2;
-          color: #688b37;
-          display: grid;
-          place-items: center;
-        }
-
-        .treatment-heading h3 {
-          margin: 0;
-          color: #2d5147;
-          font-size: 14px;
-        }
-
-        .treatment-heading span {
-          display: block;
-          margin-top: 3px;
-          color: #89958f;
-          font-size: 9px;
-        }
-
-        .detail-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-        }
-
-        .detail-box {
-          background: #f7faf8;
-          padding: 10px;
-          border-radius: 9px;
-        }
-
-        .detail-box span {
-          display: block;
-          color: #8d9994;
-          font-size: 7px;
-          margin-bottom: 4px;
-        }
-
-        .detail-box b {
-          color: #4c675e;
-          font-size: 9px;
-        }
-
-        .notes-box {
-          margin-top: 12px;
-          background: #f7faf8;
-          border-radius: 10px;
-          padding: 12px;
-        }
-
-        .notes-box strong {
-          display: block;
-          color: #56766d;
-          font-size: 9px;
-          margin-bottom: 5px;
-        }
-
-        .notes-box p {
-          margin: 0;
-          color: #74847d;
-          font-size: 9px;
-          line-height: 1.5;
-        }
-
-        .followup-box {
-          margin-top: 12px;
-          background: #f0f6e6;
-          border-radius: 10px;
-          padding: 11px;
-          display: flex;
-          gap: 9px;
-          align-items: center;
-        }
-
-        .followup-box svg {
-          color: #6d9135;
-        }
-
-        .followup-box div {
-          color: #63775c;
-          font-size: 9px;
-        }
-
-        .followup-box b {
-          color: #55772f;
-        }
-
-        .add-form {
-          display: grid;
-          gap: 11px;
-        }
-
-        .add-form label {
-          color: #60756c;
-          font-size: 9px;
-          font-weight: 800;
-        }
-
-        .add-form input,
-        .add-form select {
-          display: block;
-          width: 100%;
-          box-sizing: border-box;
-          height: 37px;
-          margin-top: 5px;
-          border: 1px solid #dce6e1;
-          border-radius: 8px;
-          padding: 0 10px;
-          background: #fbfdfc;
-          outline: none;
-          color: #405e55;
-          font-size: 10px;
-        }
-
-        .modal-footer {
-          padding: 13px 17px;
-          border-top: 1px solid #e7eeeb;
-          display: flex;
-          justify-content: flex-end;
-          gap: 8px;
-        }
-
-        .modal-footer button {
-          height: 34px;
-          padding: 0 12px;
-          border-radius: 8px;
-          border: 1px solid #dce6e1;
-          background: #fff;
-          color: #526b62;
-          cursor: pointer;
-          font-size: 9px;
-          font-weight: 800;
-        }
-
-        .modal-footer .primary {
-          background: #dff46b;
-          border-color: #dff46b;
-          color: #29452e;
-        }
-
-        @media (max-width: 800px) {
-          .treatment-stats {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .treatment-header {
-            flex-direction: column;
-          }
-        }
-
-        @media (max-width: 550px) {
-          .treatment-stats {
-            grid-template-columns: 1fr;
-          }
-
-          .detail-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
-
-      <div className="treatment-page">
-
-        <div className="treatment-header">
-
-          <div>
-            <h1>Treatment</h1>
-
-            <p>
-              Manage veterinary treatment plans,
-              medicines, follow-ups and recovery.
-            </p>
-          </div>
-
-          <button
-            className="primary-btn"
-            onClick={() =>
-              setShowAdd(true)
-            }
+    <div style={pageStyle}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 16,
+          flexWrap: "wrap",
+          marginBottom: 20,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
           >
-            <Plus size={16} />
-            Add Treatment
-          </button>
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                display: "grid",
+                placeItems: "center",
+                background: "#ecfeff",
+                color: "#0f766e",
+              }}
+            >
+              <Syringe size={21} />
+            </div>
 
+            <div>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 30,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                Vaccination Center
+              </h1>
+
+              <p
+                style={{
+                  margin: "5px 0 0",
+                  color: "#64748b",
+                }}
+              >
+                Manage vaccination history, schedules and due dates.
+              </p>
+            </div>
+          </div>
         </div>
 
-        {/* STATS */}
-
-        <div className="treatment-stats">
-
-          <div className="treatment-stat">
-            <div className="treatment-stat-icon">
-              <Pill size={18} />
-            </div>
-
-            <div>
-              <b>{counts.total}</b>
-              <span>Total Treatments</span>
-            </div>
-          </div>
-
-          <div className="treatment-stat">
-            <div className="treatment-stat-icon">
-              <Clock3 size={18} />
-            </div>
-
-            <div>
-              <b>{counts.active}</b>
-              <span>Active Treatment</span>
-            </div>
-          </div>
-
-          <div className="treatment-stat">
-            <div className="treatment-stat-icon">
-              <AlertTriangle size={18} />
-            </div>
-
-            <div>
-              <b>{counts.followUp}</b>
-              <span>Follow-up Due</span>
-            </div>
-          </div>
-
-          <div className="treatment-stat">
-            <div className="treatment-stat-icon">
-              <CheckCircle2 size={18} />
-            </div>
-
-            <div>
-              <b>{counts.completed}</b>
-              <span>Completed</span>
-            </div>
-          </div>
-
-        </div>
-
-        {/* TOOLBAR */}
-
-        <div className="treatment-toolbar">
-
-          <div className="treatment-search">
-
-            <Search size={14} />
-
-            <input
-              value={search}
-              onChange={(e) =>
-                setSearch(e.target.value)
-              }
-              placeholder="Search animal, condition, medicine or case..."
-            />
-
-          </div>
-
-          <select
-            className="treatment-filter"
-            value={filter}
-            onChange={(e) =>
-              setFilter(e.target.value)
-            }
-          >
-            <option value="All">
-              All statuses
-            </option>
-
-            <option value="Active">
-              Active
-            </option>
-
-            <option value="Follow-up Due">
-              Follow-up Due
-            </option>
-
-            <option value="Completed">
-              Completed
-            </option>
-          </select>
-
-        </div>
-
-        {/* TABLE */}
-
-        <section className="treatment-card">
-
-          <div className="card-header">
-
-            <div>
-              <h2>
-                Treatment Plans
-              </h2>
-
-              <span>
-                {filteredTreatments.length} records
-              </span>
-            </div>
-
-          </div>
-
-          <div className="table-scroll">
-
-            {filteredTreatments.length === 0 ? (
-              <div className="empty-treatment">
-                No treatment records found.
-              </div>
-            ) : (
-              <table>
-
-                <thead>
-                  <tr>
-                    <th>Animal</th>
-                    <th>Condition</th>
-                    <th>Medicine</th>
-                    <th>Veterinarian</th>
-                    <th>Follow-up</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-
-                  {filteredTreatments.map(
-                    (item) => (
-                      <tr key={item.id}>
-
-                        <td>
-
-                          <div className="animal-cell">
-
-                            <div className="animal-icon">
-                              <PawPrint size={14} />
-                            </div>
-
-                            <div>
-                              <b>
-                                {item.animal}
-                              </b>
-
-                              <span>
-                                {item.animalId} ·{" "}
-                                {item.caseId}
-                              </span>
-                            </div>
-
-                          </div>
-
-                        </td>
-
-                        <td>
-                          <div className="condition">
-                            {item.condition}
-                          </div>
-                        </td>
-
-                        <td>
-
-                          <div className="medicine">
-                            {item.medicine}
-                          </div>
-
-                          <div className="frequency">
-                            {item.frequency} ·{" "}
-                            {item.dosage}
-                          </div>
-
-                        </td>
-
-                        <td>
-
-                          <Stethoscope
-                            size={10}
-                            style={{
-                              verticalAlign:
-                                "middle",
-                              marginRight: 3,
-                            }}
-                          />
-
-                          {item.vet}
-
-                        </td>
-
-                        <td>
-
-                          <CalendarDays
-                            size={10}
-                            style={{
-                              verticalAlign:
-                                "middle",
-                              marginRight: 3,
-                            }}
-                          />
-
-                          {item.followUp}
-
-                        </td>
-
-                        <td>
-
-                          <span
-                            className={`status-badge ${statusClass(
-                              item.status
-                            )}`}
-                          >
-                            {statusIcon(
-                              item.status
-                            )}
-                            {item.status}
-                          </span>
-
-                        </td>
-
-                        <td>
-
-                          <button
-                            className="view-btn"
-                            onClick={() =>
-                              setSelected(item)
-                            }
-                          >
-                            View
-                          </button>
-
-                          {item.status !==
-                            "Completed" && (
-                            <button
-                              className="complete-btn"
-                              onClick={() =>
-                                markCompleted(
-                                  item.id
-                                )
-                              }
-                            >
-                              Complete
-                            </button>
-                          )}
-
-                        </td>
-
-                      </tr>
-                    )
-                  )}
-
-                </tbody>
-
-              </table>
-            )}
-
-          </div>
-
-        </section>
-
+        <button
+          type="button"
+          onClick={() => {
+            setError("");
+            setSuccess("");
+            setOpen(true);
+          }}
+          style={{
+            ...buttonStyle,
+            background: "#0f766e",
+            color: "#ffffff",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <Plus size={17} />
+          Add Vaccination
+        </button>
       </div>
 
-      {/* DETAILS MODAL */}
-
-      {selected && (
-        <div
-          className="modal-overlay"
-          onClick={() =>
-            setSelected(null)
-          }
-        >
-
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 12,
+          marginBottom: 18,
+        }}
+      >
+        <div style={cardStyle}>
           <div
-            className="treatment-modal"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
+            style={{
+              color: "#64748b",
+              fontSize: 13,
+              fontWeight: 700,
+            }}
           >
-
-            <div className="modal-head">
-
-              <h2>
-                Treatment Details
-              </h2>
-
-              <button
-                className="close-btn"
-                onClick={() =>
-                  setSelected(null)
-                }
-              >
-                <X size={17} />
-              </button>
-
-            </div>
-
-            <div className="modal-body">
-
-              <div className="treatment-heading">
-
-                <div className="treatment-heading-icon">
-                  <Pill size={21} />
-                </div>
-
-                <div>
-                  <h3>
-                    {selected.animal}
-                  </h3>
-
-                  <span>
-                    {selected.animalId} ·{" "}
-                    {selected.caseId}
-                  </span>
-                </div>
-
-              </div>
-
-              <div className="detail-grid">
-
-                <div className="detail-box">
-                  <span>CONDITION</span>
-                  <b>
-                    {selected.condition}
-                  </b>
-                </div>
-
-                <div className="detail-box">
-                  <span>MEDICINE</span>
-                  <b>
-                    {selected.medicine}
-                  </b>
-                </div>
-
-                <div className="detail-box">
-                  <span>DOSAGE</span>
-                  <b>
-                    {selected.dosage}
-                  </b>
-                </div>
-
-                <div className="detail-box">
-                  <span>FREQUENCY</span>
-                  <b>
-                    {selected.frequency}
-                  </b>
-                </div>
-
-                <div className="detail-box">
-                  <span>START DATE</span>
-                  <b>
-                    {selected.startDate}
-                  </b>
-                </div>
-
-                <div className="detail-box">
-                  <span>VETERINARIAN</span>
-                  <b>
-                    {selected.vet}
-                  </b>
-                </div>
-
-              </div>
-
-              <div className="notes-box">
-
-                <strong>
-                  VETERINARY NOTES
-                </strong>
-
-                <p>
-                  {selected.notes}
-                </p>
-
-              </div>
-
-              <div className="followup-box">
-
-                <CalendarDays size={18} />
-
-                <div>
-                  Follow-up scheduled for{" "}
-                  <b>
-                    {selected.followUp}
-                  </b>
-                </div>
-
-              </div>
-
-            </div>
-
-            <div className="modal-footer">
-
-              <button
-                onClick={() =>
-                  setSelected(null)
-                }
-              >
-                Close
-              </button>
-
-              <button
-                className="primary"
-                onClick={() =>
-                  markCompleted(
-                    selected.id
-                  )
-                }
-              >
-                Mark Completed
-              </button>
-
-            </div>
-
+            Total Records
           </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 30,
+              fontWeight: 900,
+              color: "#0f172a",
+            }}
+          >
+            {totalCount}
+          </div>
+        </div>
 
+        <div style={cardStyle}>
+          <div
+            style={{
+              color: "#64748b",
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            Completed
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 30,
+              fontWeight: 900,
+              color: "#15803d",
+            }}
+          >
+            {completedCount}
+          </div>
+        </div>
+
+        <div style={cardStyle}>
+          <div
+            style={{
+              color: "#64748b",
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            Scheduled
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 30,
+              fontWeight: 900,
+              color: "#b45309",
+            }}
+          >
+            {scheduledCount}
+          </div>
+        </div>
+
+        <div style={cardStyle}>
+          <div
+            style={{
+              color: "#64748b",
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            Due Dates
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 30,
+              fontWeight: 900,
+              color: "#2563eb",
+            }}
+          >
+            {dueDateCount}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle, marginBottom: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            border: "1px solid #e5e7eb",
+            borderRadius: 11,
+            padding: "8px 11px",
+          }}
+        >
+          <Search size={18} color="#64748b" />
+
+          <input
+            type="text"
+            value={search}
+            onChange={(event) =>
+              setSearch(event.target.value)
+            }
+            placeholder="Search by animal, vaccine or status..."
+            style={{
+              border: "none",
+              outline: "none",
+              width: "100%",
+              fontSize: 14,
+            }}
+          />
+        </div>
+      </div>
+
+      {error && (
+        <div
+          style={{
+            ...cardStyle,
+            marginBottom: 14,
+            borderColor: "#fecaca",
+            background: "#fef2f2",
+            color: "#b91c1c",
+          }}
+        >
+          {error}
         </div>
       )}
 
-      {/* ADD TREATMENT MODAL */}
-
-      {showAdd && (
+      {success && (
         <div
-          className="modal-overlay"
-          onClick={() =>
-            setShowAdd(false)
-          }
+          style={{
+            ...cardStyle,
+            marginBottom: 14,
+            borderColor: "#bbf7d0",
+            background: "#f0fdf4",
+            color: "#166534",
+          }}
         >
+          {success}
+        </div>
+      )}
 
+      <div style={cardStyle}>
+        {loading ? (
           <div
-            className="treatment-modal"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
+            style={{
+              padding: 30,
+              textAlign: "center",
+              color: "#64748b",
+            }}
           >
+            Loading vaccination records...
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div
+            style={{
+              padding: 35,
+              textAlign: "center",
+              color: "#64748b",
+            }}
+          >
+            No vaccination records found.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {filteredItems.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "1.3fr 1.1fr 1fr 1fr auto",
+                  gap: 14,
+                  alignItems: "center",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 14,
+                  padding: 14,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontWeight: 900,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {getAnimalName(item.animal_id)}
+                  </div>
 
-            <div className="modal-head">
+                  <div
+                    style={{
+                      marginTop: 3,
+                      fontSize: 12,
+                      color: "#64748b",
+                    }}
+                  >
+                    ID: {item.animal_id || "—"}
+                  </div>
+                </div>
 
-              <h2>
-                Add Treatment Plan
-              </h2>
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#64748b",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Vaccine
+                  </div>
+
+                  <div
+                    style={{
+                      fontWeight: 800,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {item.vaccine || "—"}
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#64748b",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Vaccination Date
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontWeight: 700,
+                    }}
+                  >
+                    <CalendarDays size={15} />
+                    {formatDate(item.date)}
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#64748b",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Next Due
+                  </div>
+
+                  <div style={{ fontWeight: 800 }}>
+                    {formatDate(item.next_due_date)}
+                  </div>
+                </div>
+
+                <div>
+                  {item.status === "Completed" ? (
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        color: "#15803d",
+                        fontWeight: 800,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <CheckCircle2 size={17} />
+                      Completed
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleComplete(item.id)
+                      }
+                      style={{
+                        ...buttonStyle,
+                        background: "#111827",
+                        color: "#ffffff",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Complete
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {open && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.5)",
+            display: "grid",
+            placeItems: "center",
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              ...cardStyle,
+              width: "min(620px, 100%)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    color: "#0f172a",
+                  }}
+                >
+                  Add Vaccination
+                </h2>
+
+                <p
+                  style={{
+                    margin: "5px 0 0",
+                    color: "#64748b",
+                    fontSize: 13,
+                  }}
+                >
+                  Create a vaccination schedule or record.
+                </p>
+              </div>
 
               <button
-                className="close-btn"
-                onClick={() =>
-                  setShowAdd(false)
-                }
+                type="button"
+                onClick={() => setOpen(false)}
+                style={{
+                  ...buttonStyle,
+                  background: "#f1f5f9",
+                  color: "#334155",
+                  padding: "8px 11px",
+                }}
               >
-                <X size={17} />
+                ✕
               </button>
-
             </div>
 
-            <div className="modal-body">
-
-              <div className="add-form">
-
-                <label>
-                  Animal ID
-                  <input
-                    placeholder="e.g. AN-1027"
-                  />
+            <div
+              style={{
+                display: "grid",
+                gap: 14,
+                marginTop: 18,
+              }}
+            >
+              <div>
+                <label style={labelStyle}>
+                  Animal
                 </label>
 
-                <label>
-                  Case ID
-                  <input
-                    placeholder="e.g. CS-2048"
-                  />
+                <select
+                  value={form.animal_id}
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      animal_id: event.target.value,
+                    }))
+                  }
+                  style={inputStyle}
+                >
+                  <option value="">
+                    Select animal
+                  </option>
+
+                  {animals.map((animal) => (
+                    <option
+                      key={animal.id}
+                      value={animal.id}
+                    >
+                      {animal.name || "Animal"}{" "}
+                      {animal.tag_id
+                        ? `(${animal.tag_id})`
+                        : ""}{" "}
+                      — {animal.species || "Unknown"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={labelStyle}>
+                  Vaccine Name
                 </label>
 
-                <label>
-                  Condition
-                  <input
-                    placeholder="Enter condition"
-                  />
-                </label>
+                <input
+                  type="text"
+                  value={form.vaccine}
+                  placeholder="e.g. FMD Vaccine"
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      vaccine: event.target.value,
+                    }))
+                  }
+                  style={inputStyle}
+                />
+              </div>
 
-                <label>
-                  Medicine / Treatment
-                  <input
-                    placeholder="Enter treatment"
-                  />
-                </label>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(2, minmax(0, 1fr))",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <label style={labelStyle}>
+                    Vaccination Date
+                  </label>
 
-                <label>
-                  Frequency
-                  <select>
-                    <option>
-                      Once daily
-                    </option>
-                    <option>
-                      Twice daily
-                    </option>
-                    <option>
-                      As prescribed
-                    </option>
-                  </select>
-                </label>
-
-                <label>
-                  Veterinarian
-                  <select>
-                    <option>
-                      Dr. Mehta
-                    </option>
-                    <option>
-                      Dr. Patil
-                    </option>
-                    <option>
-                      Dr. Shah
-                    </option>
-                  </select>
-                </label>
-
-                <label>
-                  Follow-up Date
                   <input
                     type="date"
-                    defaultValue="2026-10-01"
+                    value={form.date}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        date: event.target.value,
+                      }))
+                    }
+                    style={inputStyle}
                   />
-                </label>
+                </div>
 
+                <div>
+                  <label style={labelStyle}>
+                    Next Due Date
+                  </label>
+
+                  <input
+                    type="date"
+                    value={form.next_due_date}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        next_due_date:
+                          event.target.value,
+                      }))
+                    }
+                    style={inputStyle}
+                  />
+                </div>
               </div>
 
+              <div>
+                <label style={labelStyle}>
+                  Status
+                </label>
+
+                <select
+                  value={form.status}
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      status: event.target.value,
+                    }))
+                  }
+                  style={inputStyle}
+                >
+                  <option value="Scheduled">
+                    Scheduled
+                  </option>
+                  <option value="Completed">
+                    Completed
+                  </option>
+                </select>
+              </div>
             </div>
 
-            <div className="modal-footer">
-
-              <button
-                onClick={() =>
-                  setShowAdd(false)
-                }
-              >
-                Cancel
-              </button>
-
-              <button
-                className="primary"
-                onClick={addTreatment}
-              >
-                Save Treatment
-              </button>
-
-            </div>
-
+            <button
+              type="button"
+              disabled={saving}
+              onClick={handleSave}
+              style={{
+                ...buttonStyle,
+                width: "100%",
+                marginTop: 18,
+                background: "#0f766e",
+                color: "#ffffff",
+                opacity: saving ? 0.7 : 1,
+              }}
+            >
+              {saving
+                ? "Saving..."
+                : "Save Vaccination"}
+            </button>
           </div>
-
         </div>
       )}
-
-    </>
+    </div>
   );
 }
-
-export default Treatment;

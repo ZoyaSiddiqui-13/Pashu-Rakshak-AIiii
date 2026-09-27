@@ -1,0 +1,17 @@
+Pashu_Rakshak_AI/.env
+Pashu_Rakshak_AI/.env.*
+!Pashu_Rakshak_AI/.env.example
+
+Pashu_Rakshak_AI/node_modules/
+Pashu_Rakshak_AI/dist/
+
+Pashu_Rakshak_AI/__pycache__/
+Pashu_Rakshak_AI/backend/__pycache__/
+Pashu_Rakshak_AI/*.pyc
+Pashu_Rakshak_AI/**/*.pyc
+
+Pashu_Rakshak_AI/.venv/
+Pashu_Rakshak_AI/backend/.venv/
+
+*.log
+.vscode/

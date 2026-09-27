@@ -1,851 +1,1296 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  TrendingUp,
   Activity,
+  AlertTriangle,
+  BarChart3,
+  Brain,
+  CheckCircle2,
+  Download,
+  RefreshCw,
   ShieldAlert,
   Syringe,
-  Brain,
-  MapPinned,
-  CalendarDays,
-  Download,
-  CheckCircle2,
+  TrendingUp,
 } from "lucide-react";
+import api from "./api";
 
-function Analytics() {
+const demoData = {
+  average_health_score: 86,
+  critical_cases: 12,
+  ai_screening_coverage: 94,
+  vaccination_coverage: 91,
+  total_animals: 300,
+  recovered_cases: 128,
+  active_cases: 42,
+  monthly_cases: [
+    { month: "Jan", value: 12 },
+    { month: "Feb", value: 18 },
+    { month: "Mar", value: 16 },
+    { month: "Apr", value: 24 },
+    { month: "May", value: 21 },
+    { month: "Jun", value: 29 },
+    { month: "Jul", value: 26 },
+    { month: "Aug", value: 31 },
+    { month: "Sep", value: 27 },
+    { month: "Oct", value: 34 },
+    { month: "Nov", value: 30 },
+    { month: "Dec", value: 36 },
+  ],
+  risk_distribution: [
+    { label: "Low", value: 178 },
+    { label: "Medium", value: 72 },
+    { label: "High", value: 34 },
+    { label: "Critical", value: 16 },
+  ],
+};
+
+const periods = [
+  "Last 7 Days",
+  "Last 30 Days",
+  "Last 90 Days",
+  "This Year",
+];
+
+export default function Analytics() {
+  const [data, setData] = useState(demoData);
   const [period, setPeriod] = useState("Last 30 Days");
+  const [loading, setLoading] = useState(true);
+  const [usingDemo, setUsingDemo] = useState(false);
+  const [error, setError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState("");
 
-  const riskData = [
-    { label: "Low Risk", value: 62 },
-    { label: "Medium Risk", value: 23 },
-    { label: "High Risk", value: 11 },
-    { label: "Critical", value: 4 },
-  ];
+  async function loadAnalytics() {
+    setLoading(true);
+    setError("");
 
-  const monthlyCases = [
-    { month: "Apr", value: 22 },
-    { month: "May", value: 31 },
-    { month: "Jun", value: 27 },
-    { month: "Jul", value: 42 },
-    { month: "Aug", value: 51 },
-    { month: "Sep", value: 64 },
-  ];
+    try {
+      const response = await api.analytics.summary();
 
-  const regions = [
-    { name: "Ahmednagar", cases: 38, risk: "Critical", farms: 24 },
-    { name: "Satara", cases: 29, risk: "High", farms: 19 },
-    { name: "Pune", cases: 21, risk: "Medium", farms: 27 },
-    { name: "Nashik", cases: 16, risk: "Medium", farms: 18 },
-    { name: "Solapur", cases: 11, risk: "Low", farms: 14 },
-  ];
+      if (response && typeof response === "object") {
+        const merged = {
+          ...demoData,
+          ...response,
+          monthly_cases:
+            Array.isArray(response.monthly_cases)
+              ? response.monthly_cases
+              : demoData.monthly_cases,
+          risk_distribution:
+            Array.isArray(response.risk_distribution)
+              ? response.risk_distribution
+              : demoData.risk_distribution,
+        };
 
-  const maxCases = Math.max(...monthlyCases.map((item) => item.value));
+        setData(merged);
+        setUsingDemo(false);
+      } else {
+        setData(demoData);
+        setUsingDemo(true);
+      }
 
-  function riskClass(risk) {
-    if (risk === "Critical") return "critical";
-    if (risk === "High") return "high";
-    if (risk === "Medium") return "medium";
-    return "low";
+      setLastUpdated(new Date().toLocaleTimeString());
+    } catch (err) {
+      setData(demoData);
+      setUsingDemo(true);
+      setError(
+        err?.message ||
+          "Analytics API unavailable. Showing demo analytics."
+      );
+      setLastUpdated(new Date().toLocaleTimeString());
+    } finally {
+      setLoading(false);
+    }
   }
 
+  useEffect(() => {
+    loadAnalytics();
+  }, []);
+
+  const maxCases = useMemo(() => {
+    const values = data.monthly_cases.map((item) =>
+      Number(item?.value || 0)
+    );
+
+    return Math.max(...values, 1);
+  }, [data.monthly_cases]);
+
+  const totalRiskAnimals = useMemo(() => {
+    return data.risk_distribution.reduce(
+      (sum, item) => sum + Number(item?.value || 0),
+      0
+    );
+  }, [data.risk_distribution]);
+
   function exportReport() {
-    alert("Analytics report prepared for export.");
+    const report = [
+      "PASHU-RAKSHAK AI ANALYTICS REPORT",
+      `Period: ${period}`,
+      `Generated: ${new Date().toLocaleString()}`,
+      "",
+      `Average Health Score: ${data.average_health_score}%`,
+      `Critical Cases: ${data.critical_cases}`,
+      `AI Screening Coverage: ${data.ai_screening_coverage}%`,
+      `Vaccination Coverage: ${data.vaccination_coverage}%`,
+      `Total Animals: ${data.total_animals}`,
+      `Recovered Cases: ${data.recovered_cases}`,
+      `Active Cases: ${data.active_cases}`,
+      "",
+      "Risk Distribution:",
+      ...data.risk_distribution.map(
+        (item) =>
+          `${item.label}: ${item.value}`
+      ),
+    ].join("\n");
+
+    const blob = new Blob([report], {
+      type: "text/plain;charset=utf-8",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = url;
+    anchor.download = "pashu-rakshak-analytics-report.txt";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    URL.revokeObjectURL(url);
   }
 
   return (
-    <>
-      <style>{`
-        .analytics-page {
-          max-width: 1250px;
-          margin: 0 auto;
-          padding-bottom: 35px;
-        }
-
-        .analytics-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 20px;
-          margin-bottom: 20px;
-        }
-
-        .analytics-header h1 {
-          margin: 0;
-          color: #173e35;
-          font-size: 29px;
-        }
-
-        .analytics-header p {
-          margin: 6px 0 0;
-          color: #7d8b85;
-          font-size: 12px;
-        }
-
-        .analytics-actions {
-          display: flex;
-          gap: 8px;
-        }
-
-        .period-select {
-          height: 38px;
-          border: 1px solid #dce6e1;
-          border-radius: 8px;
-          background: #fff;
-          color: #526b62;
-          padding: 0 10px;
-          outline: none;
-          font-size: 9px;
-          font-weight: 800;
-        }
-
-        .export-btn {
-          height: 38px;
-          border: 0;
-          border-radius: 8px;
-          background: #dff46b;
-          color: #29452e;
-          padding: 0 12px;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          cursor: pointer;
-          font-size: 9px;
-          font-weight: 900;
-        }
-
-        .analytics-stats {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 13px;
-          margin-bottom: 16px;
-        }
-
-        .analytics-stat {
-          background: #fff;
-          border: 1px solid #e2ebe7;
-          border-radius: 13px;
-          padding: 15px;
-        }
-
-        .stat-top {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .stat-icon {
-          width: 37px;
-          height: 37px;
-          border-radius: 10px;
-          background: #eef5e4;
-          color: #6d9135;
-          display: grid;
-          place-items: center;
-        }
-
-        .stat-change {
-          color: #68903a;
-          background: #eef8df;
-          border-radius: 999px;
-          padding: 4px 6px;
-          font-size: 7px;
-          font-weight: 900;
-        }
-
-        .analytics-stat b {
-          display: block;
-          color: #284c42;
-          font-size: 21px;
-          margin-top: 12px;
-        }
-
-        .analytics-stat span {
-          color: #87938d;
-          font-size: 9px;
-        }
-
-        .analytics-grid {
-          display: grid;
-          grid-template-columns: 1.25fr 0.75fr;
-          gap: 15px;
-          margin-bottom: 15px;
-        }
-
-        .analytics-card {
-          background: #fff;
-          border: 1px solid #e2ebe7;
-          border-radius: 15px;
-          overflow: hidden;
-        }
-
-        .analytics-card-head {
-          padding: 15px 16px;
-          border-bottom: 1px solid #e7eeeb;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .analytics-card-head h2 {
-          margin: 0;
-          color: #24483e;
-          font-size: 15px;
-        }
-
-        .analytics-card-head span {
-          color: #89958f;
-          font-size: 8px;
-        }
-
-        .chart-body {
-          padding: 18px;
-        }
-
-        .bar-chart {
-          height: 230px;
-          display: flex;
-          align-items: flex-end;
-          gap: 18px;
-          border-bottom: 1px solid #dfe8e3;
-          position: relative;
-        }
-
-        .chart-grid-line {
-          position: absolute;
-          left: 0;
-          right: 0;
-          height: 1px;
-          background: #edf2ef;
-        }
-
-        .grid-one {
-          bottom: 25%;
-        }
-
-        .grid-two {
-          bottom: 50%;
-        }
-
-        .grid-three {
-          bottom: 75%;
-        }
-
-        .bar-column {
-          flex: 1;
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-          justify-content: flex-end;
-          align-items: center;
-          position: relative;
-          z-index: 2;
-        }
-
-        .bar-value {
-          color: #688a39;
-          font-size: 8px;
-          font-weight: 900;
-          margin-bottom: 5px;
-        }
-
-        .bar {
-          width: min(38px, 70%);
-          min-height: 5px;
-          border-radius: 6px 6px 0 0;
-          background: #c7dc76;
-        }
-
-        .bar-month {
-          color: #87948e;
-          font-size: 8px;
-          margin-top: 7px;
-        }
-
-        .risk-chart {
-          padding: 20px;
-        }
-
-        .donut-wrap {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 24px;
-          margin-bottom: 20px;
-        }
-
-        .donut {
-          width: 145px;
-          height: 145px;
-          border-radius: 50%;
-          background:
-            conic-gradient(
-              #83a94c 0deg 223deg,
-              #c7a83c 223deg 306deg,
-              #dc8a3b 306deg 346deg,
-              #c94d43 346deg 360deg
-            );
-          display: grid;
-          place-items: center;
-        }
-
-        .donut-inner {
-          width: 92px;
-          height: 92px;
-          border-radius: 50%;
-          background: white;
-          display: grid;
-          place-items: center;
-          text-align: center;
-        }
-
-        .donut-inner b {
-          display: block;
-          color: #315349;
-          font-size: 19px;
-        }
-
-        .donut-inner span {
-          color: #89958f;
-          font-size: 7px;
-        }
-
-        .risk-legend {
-          display: grid;
-          gap: 9px;
-          flex: 1;
-        }
-
-        .risk-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-        }
-
-        .risk-name {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          color: #62766e;
-          font-size: 8px;
-        }
-
-        .risk-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-        }
-
-        .risk-number {
-          color: #3f5d54;
-          font-size: 8px;
-          font-weight: 900;
-        }
-
-        .health-score {
-          margin-top: 5px;
-          padding: 13px;
-          background: #f7faf8;
-          border-radius: 10px;
-        }
-
-        .health-score-top {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 7px;
-        }
-
-        .health-score-top span {
-          color: #74847d;
-          font-size: 8px;
-        }
-
-        .health-score-top b {
-          color: #5f8434;
-          font-size: 10px;
-        }
-
-        .progress {
-          height: 7px;
-          background: #e3ebe5;
-          border-radius: 999px;
-          overflow: hidden;
-        }
-
-        .progress-fill {
-          width: 86%;
-          height: 100%;
-          background: #9fbe58;
-          border-radius: inherit;
-        }
-
-        .bottom-grid {
-          display: grid;
-          grid-template-columns: 0.9fr 1.1fr;
-          gap: 15px;
-        }
-
-        .ai-metrics {
-          padding: 15px;
-          display: grid;
-          gap: 10px;
-        }
-
-        .ai-row {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 11px;
-          background: #f7faf8;
-          border-radius: 9px;
-        }
-
-        .ai-row-icon {
-          width: 33px;
-          height: 33px;
-          border-radius: 8px;
-          display: grid;
-          place-items: center;
-          background: #eef5e4;
-          color: #6d9135;
-        }
-
-        .ai-row-content {
-          flex: 1;
-        }
-
-        .ai-row-content b {
-          display: block;
-          color: #405f55;
-          font-size: 10px;
-        }
-
-        .ai-row-content span {
-          color: #89958f;
-          font-size: 7px;
-        }
-
-        .ai-value {
-          color: #5e8036;
-          font-size: 11px;
-          font-weight: 900;
-        }
-
-        .region-table {
-          padding: 8px;
-        }
-
-        .region-row {
-          display: grid;
-          grid-template-columns: 1.3fr 0.7fr 0.7fr 0.8fr;
-          align-items: center;
-          gap: 10px;
-          padding: 12px 9px;
-          border-bottom: 1px solid #edf1ef;
-        }
-
-        .region-row:last-child {
-          border-bottom: 0;
-        }
-
-        .region-head {
-          color: #89958f;
-          font-size: 7px;
-          font-weight: 900;
-          text-transform: uppercase;
-        }
-
-        .region-name {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          color: #456359;
-          font-size: 9px;
-          font-weight: 900;
-        }
-
-        .region-name svg {
-          color: #789449;
-        }
-
-        .region-value {
-          color: #63766e;
-          font-size: 9px;
-        }
-
-        .region-risk {
-          justify-self: start;
-          border-radius: 999px;
-          padding: 4px 7px;
-          font-size: 7px;
-          font-weight: 900;
-        }
-
-        .region-risk.critical {
-          background: #ffe7e4;
-          color: #b43d35;
-        }
-
-        .region-risk.high {
-          background: #fff0df;
-          color: #b76a1d;
-        }
-
-        .region-risk.medium {
-          background: #fff8d8;
-          color: #89751c;
-        }
-
-        .region-risk.low {
-          background: #eef8df;
-          color: #5e8132;
-        }
-
-        .analytics-note {
-          margin-top: 15px;
-          padding: 11px 13px;
-          border-radius: 9px;
-          background: #f0f6e6;
-          color: #62765a;
-          font-size: 8px;
-          line-height: 1.5;
-        }
-
-        @media (max-width: 950px) {
-          .analytics-stats {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .analytics-grid,
-          .bottom-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 600px) {
-          .analytics-stats {
-            grid-template-columns: 1fr;
-          }
-
-          .analytics-header {
-            flex-direction: column;
-          }
-
-          .analytics-actions {
-            width: 100%;
-          }
-
-          .period-select,
-          .export-btn {
-            flex: 1;
-          }
-
-          .donut-wrap {
-            flex-direction: column;
-          }
-
-          .region-row {
-            grid-template-columns: 1.2fr 0.6fr 0.7fr;
-          }
-
-          .region-row > :last-child {
-            display: none;
-          }
-        }
-      `}</style>
-
-      <div className="analytics-page">
-        <div className="analytics-header">
-          <div>
-            <h1>Analytics</h1>
-            <p>
-              Monitor animal health, disease patterns, AI screening and
-              regional surveillance.
-            </p>
+    <div style={styles.page}>
+      <div style={styles.header}>
+        <div>
+          <div style={styles.eyebrow}>
+            INSIGHTS & REPORTS
           </div>
 
-          <div className="analytics-actions">
-            <select
-              className="period-select"
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-            >
-              <option>Last 7 Days</option>
-              <option>Last 30 Days</option>
-              <option>Last 90 Days</option>
-              <option>This Year</option>
-            </select>
+          <h1 style={styles.title}>
+            Analytics
+          </h1>
 
-            <button className="export-btn" onClick={exportReport}>
-              <Download size={14} />
-              Export Report
-            </button>
-          </div>
+          <p style={styles.subtitle}>
+            Track livestock health, disease trends, AI screening,
+            vaccination coverage and regional indicators.
+          </p>
         </div>
 
-        <div className="analytics-stats">
-          <div className="analytics-stat">
-            <div className="stat-top">
-              <div className="stat-icon">
-                <Activity size={17} />
-              </div>
-              <div className="stat-change">+12.4%</div>
-            </div>
-            <b>86%</b>
-            <span>Average Health Score</span>
-          </div>
+        <div style={styles.headerActions}>
+          <select
+            value={period}
+            onChange={(event) =>
+              setPeriod(event.target.value)
+            }
+            style={styles.periodSelect}
+          >
+            {periods.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
 
-          <div className="analytics-stat">
-            <div className="stat-top">
-              <div className="stat-icon">
-                <ShieldAlert size={17} />
-              </div>
-              <div className="stat-change">-8.2%</div>
-            </div>
-            <b>12</b>
-            <span>Critical Cases</span>
-          </div>
+          <button
+            type="button"
+            onClick={exportReport}
+            style={styles.exportButton}
+          >
+            <Download size={15} />
+            Export Report
+          </button>
 
-          <div className="analytics-stat">
-            <div className="stat-top">
-              <div className="stat-icon">
-                <Brain size={17} />
-              </div>
-              <div className="stat-change">+15.7%</div>
-            </div>
-            <b>94%</b>
-            <span>AI Screening Coverage</span>
-          </div>
-
-          <div className="analytics-stat">
-            <div className="stat-top">
-              <div className="stat-icon">
-                <Syringe size={17} />
-              </div>
-              <div className="stat-change">+6.1%</div>
-            </div>
-            <b>91%</b>
-            <span>Vaccination Coverage</span>
-          </div>
-        </div>
-
-        <div className="analytics-grid">
-          <section className="analytics-card">
-            <div className="analytics-card-head">
-              <div>
-                <h2>Disease Cases Trend</h2>
-                <span>{period}</span>
-              </div>
-              <TrendingUp size={17} color="#739044" />
-            </div>
-
-            <div className="chart-body">
-              <div className="bar-chart">
-                <div className="chart-grid-line grid-one"></div>
-                <div className="chart-grid-line grid-two"></div>
-                <div className="chart-grid-line grid-three"></div>
-
-                {monthlyCases.map((item) => (
-                  <div className="bar-column" key={item.month}>
-                    <div className="bar-value">{item.value}</div>
-
-                    <div
-                      className="bar"
-                      style={{
-                        height: `${(item.value / maxCases) * 78}%`,
-                      }}
-                    ></div>
-
-                    <div className="bar-month">{item.month}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="analytics-note">
-                Disease reports have increased over the selected period.
-                Regional clusters should continue to be reviewed through the
-                surveillance workflow.
-              </div>
-            </div>
-          </section>
-
-          <section className="analytics-card">
-            <div className="analytics-card-head">
-              <div>
-                <h2>Risk Distribution</h2>
-                <span>Current animal population</span>
-              </div>
-              <ShieldAlert size={17} color="#739044" />
-            </div>
-
-            <div className="risk-chart">
-              <div className="donut-wrap">
-                <div className="donut">
-                  <div className="donut-inner">
-                    <div>
-                      <b>300</b>
-                      <span>Animals</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="risk-legend">
-                  {riskData.map((item, index) => (
-                    <div className="risk-row" key={item.label}>
-                      <div className="risk-name">
-                        <span
-                          className="risk-dot"
-                          style={{
-                            background:
-                              index === 0
-                                ? "#83a94c"
-                                : index === 1
-                                ? "#c7a83c"
-                                : index === 2
-                                ? "#dc8a3b"
-                                : "#c94d43",
-                          }}
-                        ></span>
-                        {item.label}
-                      </div>
-
-                      <div className="risk-number">{item.value}%</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="health-score">
-                <div className="health-score-top">
-                  <span>Overall population health</span>
-                  <b>86 / 100</b>
-                </div>
-
-                <div className="progress">
-                  <div className="progress-fill"></div>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        <div className="bottom-grid">
-          <section className="analytics-card">
-            <div className="analytics-card-head">
-              <div>
-                <h2>System Performance</h2>
-                <span>AI & health monitoring</span>
-              </div>
-              <Brain size={17} color="#739044" />
-            </div>
-
-            <div className="ai-metrics">
-              <div className="ai-row">
-                <div className="ai-row-icon">
-                  <Brain size={16} />
-                </div>
-
-                <div className="ai-row-content">
-                  <b>AI Screening</b>
-                  <span>Cases screened by AI workflow</span>
-                </div>
-
-                <div className="ai-value">284</div>
-              </div>
-
-              <div className="ai-row">
-                <div className="ai-row-icon">
-                  <Activity size={16} />
-                </div>
-
-                <div className="ai-row-content">
-                  <b>Health Assessments</b>
-                  <span>Animal assessments completed</span>
-                </div>
-
-                <div className="ai-value">391</div>
-              </div>
-
-              <div className="ai-row">
-                <div className="ai-row-icon">
-                  <Syringe size={16} />
-                </div>
-
-                <div className="ai-row-content">
-                  <b>Vaccinations</b>
-                  <span>Vaccination records updated</span>
-                </div>
-
-                <div className="ai-value">273</div>
-              </div>
-
-              <div className="ai-row">
-                <div className="ai-row-icon">
-                  <CheckCircle2 size={16} />
-                </div>
-
-                <div className="ai-row-content">
-                  <b>Resolved Cases</b>
-                  <span>Cases completed after review</span>
-                </div>
-
-                <div className="ai-value">178</div>
-              </div>
-            </div>
-          </section>
-
-          <section className="analytics-card">
-            <div className="analytics-card-head">
-              <div>
-                <h2>Regional Disease Intelligence</h2>
-                <span>Highest activity regions</span>
-              </div>
-              <MapPinned size={17} color="#739044" />
-            </div>
-
-            <div className="region-table">
-              <div className="region-row">
-                <div className="region-head">Region</div>
-                <div className="region-head">Cases</div>
-                <div className="region-head">Risk</div>
-                <div className="region-head">Farms</div>
-              </div>
-
-              {regions.map((region) => (
-                <div className="region-row" key={region.name}>
-                  <div className="region-name">
-                    <MapPinned size={11} />
-                    {region.name}
-                  </div>
-
-                  <div className="region-value">{region.cases}</div>
-
-                  <div className={`region-risk ${riskClass(region.risk)}`}>
-                    {region.risk}
-                  </div>
-
-                  <div className="region-value">{region.farms}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        <div className="analytics-note">
-          <CalendarDays
-            size={11}
-            style={{
-              verticalAlign: "middle",
-              marginRight: 5,
-            }}
-          />
-          Analytics are based on recorded animal health, screening,
-          treatment, vaccination and surveillance data. AI outputs are
-          intended as decision-support signals and should be reviewed by
-          veterinary professionals where required.
+          <button
+            type="button"
+            onClick={loadAnalytics}
+            style={styles.refreshButton}
+          >
+            <RefreshCw size={15} />
+            Refresh
+          </button>
         </div>
       </div>
-    </>
+
+      {usingDemo && (
+        <div style={styles.demoBanner}>
+          <BarChart3 size={17} />
+
+          <span>
+            Showing demo analytics data. Connected backend data
+            will replace it when available.
+          </span>
+        </div>
+      )}
+
+      {error && (
+        <div style={styles.errorBanner}>
+          <AlertTriangle size={17} />
+
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div style={styles.statsGrid}>
+        <StatCard
+          icon={Activity}
+          value={`${data.average_health_score}%`}
+          label="Average Health Score"
+          change="+12.4%"
+        />
+
+        <StatCard
+          icon={ShieldAlert}
+          value={data.critical_cases}
+          label="Critical Cases"
+          change="-8.2%"
+          danger
+        />
+
+        <StatCard
+          icon={Brain}
+          value={`${data.ai_screening_coverage}%`}
+          label="AI Screening Coverage"
+          change="+15.7%"
+        />
+
+        <StatCard
+          icon={Syringe}
+          value={`${data.vaccination_coverage}%`}
+          label="Vaccination Coverage"
+          change="+6.1%"
+        />
+      </div>
+
+      <div style={styles.overviewGrid}>
+        <OverviewCard
+          icon={Activity}
+          label="Total Animals"
+          value={data.total_animals}
+        />
+
+        <OverviewCard
+          icon={CheckCircle2}
+          label="Recovered Cases"
+          value={data.recovered_cases}
+        />
+
+        <OverviewCard
+          icon={TrendingUp}
+          label="Active Cases"
+          value={data.active_cases}
+        />
+
+        <OverviewCard
+          icon={BarChart3}
+          label="Tracked Risk Records"
+          value={totalRiskAnimals}
+        />
+      </div>
+
+      {loading ? (
+        <div style={styles.loading}>
+          <RefreshCw
+            size={24}
+            style={styles.spinner}
+          />
+
+          Loading analytics...
+        </div>
+      ) : (
+        <>
+          <div style={styles.chartGrid}>
+            <section style={styles.card}>
+              <div style={styles.cardHeader}>
+                <div>
+                  <h2 style={styles.cardTitle}>
+                    Disease Cases Trend
+                  </h2>
+
+                  <p style={styles.cardSubtitle}>
+                    {period}
+                  </p>
+                </div>
+
+                <TrendingUp
+                  size={18}
+                  color="#059669"
+                />
+              </div>
+
+              <div style={styles.barChart}>
+                <div style={styles.chartGridLine} />
+                <div style={styles.chartGridLineTwo} />
+                <div style={styles.chartGridLineThree} />
+
+                {data.monthly_cases.map((item) => {
+                  const value = Number(item?.value || 0);
+
+                  const height =
+                    (value / maxCases) * 100;
+
+                  return (
+                    <div
+                      key={item.month}
+                      style={styles.barColumn}
+                    >
+                      <div style={styles.barValue}>
+                        {value}
+                      </div>
+
+                      <div style={styles.barArea}>
+                        <div
+                          style={{
+                            ...styles.bar,
+                            height: `${Math.max(
+                              height,
+                              4
+                            )}%`,
+                          }}
+                        />
+                      </div>
+
+                      <div style={styles.barMonth}>
+                        {item.month}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={styles.chartNote}>
+                Case reporting trends can be reviewed alongside
+                surveillance, treatment and outbreak workflows.
+              </div>
+            </section>
+
+            <section style={styles.card}>
+              <div style={styles.cardHeader}>
+                <div>
+                  <h2 style={styles.cardTitle}>
+                    Risk Distribution
+                  </h2>
+
+                  <p style={styles.cardSubtitle}>
+                    Current animal population
+                  </p>
+                </div>
+
+                <ShieldAlert
+                  size={18}
+                  color="#059669"
+                />
+              </div>
+
+              <div style={styles.riskLayout}>
+                <div style={styles.donutWrap}>
+                  <div
+                    style={{
+                      ...styles.donut,
+                      background: getDonutGradient(
+                        data.risk_distribution,
+                        totalRiskAnimals
+                      ),
+                    }}
+                  >
+                    <div style={styles.donutInner}>
+                      <strong>
+                        {totalRiskAnimals}
+                      </strong>
+
+                      <span>
+                        Animals
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={styles.legend}>
+                  {data.risk_distribution.map(
+                    (item) => (
+                      <RiskLegend
+                        key={item.label}
+                        label={item.label}
+                        value={Number(
+                          item.value || 0
+                        )}
+                        total={totalRiskAnimals}
+                      />
+                    )
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div style={styles.bottomGrid}>
+            <section style={styles.card}>
+              <div style={styles.cardHeader}>
+                <div>
+                  <h2 style={styles.cardTitle}>
+                    System Performance
+                  </h2>
+
+                  <p style={styles.cardSubtitle}>
+                    AI and health monitoring
+                  </p>
+                </div>
+
+                <Brain
+                  size={18}
+                  color="#059669"
+                />
+              </div>
+
+              <PerformanceRow
+                icon={Brain}
+                label="AI Screening"
+                value={data.ai_screening_coverage}
+                suffix="%"
+              />
+
+              <PerformanceRow
+                icon={Activity}
+                label="Average Health"
+                value={data.average_health_score}
+                suffix="%"
+              />
+
+              <PerformanceRow
+                icon={Syringe}
+                label="Vaccination Coverage"
+                value={data.vaccination_coverage}
+                suffix="%"
+              />
+
+              <PerformanceRow
+                icon={CheckCircle2}
+                label="Recovery Records"
+                value={
+                  data.recovered_cases
+                    ? Math.min(
+                        Math.round(
+                          (data.recovered_cases /
+                            Math.max(
+                              data.total_animals,
+                              1
+                            )) *
+                            100
+                        ),
+                        100
+                      )
+                    : 0
+                }
+                suffix="%"
+              />
+            </section>
+
+            <section style={styles.card}>
+              <div style={styles.cardHeader}>
+                <div>
+                  <h2 style={styles.cardTitle}>
+                    Health Intelligence
+                  </h2>
+
+                  <p style={styles.cardSubtitle}>
+                    Current operational snapshot
+                  </p>
+                </div>
+
+                <Activity
+                  size={18}
+                  color="#059669"
+                />
+              </div>
+
+              <IntelligenceRow
+                title="Population Health"
+                text={`${data.average_health_score}% average health score`}
+              />
+
+              <IntelligenceRow
+                title="AI Monitoring"
+                text={`${data.ai_screening_coverage}% screening coverage`}
+              />
+
+              <IntelligenceRow
+                title="Vaccination"
+                text={`${data.vaccination_coverage}% vaccination coverage`}
+              />
+
+              <IntelligenceRow
+                title="Active Cases"
+                text={`${data.active_cases} active cases currently tracked`}
+              />
+            </section>
+          </div>
+        </>
+      )}
+
+      <div style={styles.footerNote}>
+        Pashu-Rakshak AI analytics are intended for health
+        monitoring and decision support. Clinical decisions
+        remain with qualified veterinary professionals.
+      </div>
+
+      <style>
+        {`
+          @keyframes analyticsSpin {
+            from {
+              transform: rotate(0deg);
+            }
+            to {
+              transform: rotate(360deg);
+            }
+          }
+
+          @media (max-width: 1100px) {
+            .analytics-stats {
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+          }
+
+          @media (max-width: 820px) {
+            .analytics-charts,
+            .analytics-bottom {
+              grid-template-columns: 1fr !important;
+            }
+          }
+
+          @media (max-width: 620px) {
+            .analytics-stats {
+              grid-template-columns: 1fr !important;
+            }
+          }
+        `}
+      </style>
+    </div>
   );
 }
 
-export default Analytics;
+function StatCard({
+  icon: Icon,
+  value,
+  label,
+  change,
+  danger = false,
+}) {
+  return (
+    <div style={styles.statCard}>
+      <div style={styles.statTop}>
+        <div
+          style={{
+            ...styles.statIcon,
+            ...(danger
+              ? styles.statDangerIcon
+              : {}),
+          }}
+        >
+          <Icon size={17} />
+        </div>
+
+        <span style={styles.statChange}>
+          {change}
+        </span>
+      </div>
+
+      <strong style={styles.statValue}>
+        {value}
+      </strong>
+
+      <span style={styles.statLabel}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function OverviewCard({
+  icon: Icon,
+  label,
+  value,
+}) {
+  return (
+    <div style={styles.overviewCard}>
+      <div style={styles.overviewIcon}>
+        <Icon size={17} />
+      </div>
+
+      <div>
+        <strong style={styles.overviewValue}>
+          {value}
+        </strong>
+
+        <span style={styles.overviewLabel}>
+          {label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RiskLegend({
+  label,
+  value,
+  total,
+}) {
+  const percentage = total
+    ? Math.round((value / total) * 100)
+    : 0;
+
+  const colorMap = {
+    Low: "#059669",
+    Medium: "#d97706",
+    High: "#ea580c",
+    Critical: "#dc2626",
+  };
+
+  return (
+    <div style={styles.legendRow}>
+      <div style={styles.legendLeft}>
+        <span
+          style={{
+            ...styles.legendDot,
+            background:
+              colorMap[label] ||
+              "#64748b",
+          }}
+        />
+
+        <span style={styles.legendName}>
+          {label}
+        </span>
+      </div>
+
+      <strong style={styles.legendValue}>
+        {value}{" "}
+        <small>
+          ({percentage}%)
+        </small>
+      </strong>
+    </div>
+  );
+}
+
+function PerformanceRow({
+  icon: Icon,
+  label,
+  value,
+  suffix,
+}) {
+  const safeValue = Math.max(
+    0,
+    Math.min(100, Number(value || 0))
+  );
+
+  return (
+    <div style={styles.performanceRow}>
+      <div style={styles.performanceTop}>
+        <div style={styles.performanceName}>
+          <div style={styles.performanceIcon}>
+            <Icon size={14} />
+          </div>
+
+          <span>
+            {label}
+          </span>
+        </div>
+
+        <strong>
+          {safeValue}
+          {suffix}
+        </strong>
+      </div>
+
+      <div style={styles.track}>
+        <div
+          style={{
+            ...styles.trackFill,
+            width: `${safeValue}%`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function IntelligenceRow({
+  title,
+  text,
+}) {
+  return (
+    <div style={styles.intelligenceRow}>
+      <div>
+        <strong style={styles.intelligenceTitle}>
+          {title}
+        </strong>
+
+        <span style={styles.intelligenceText}>
+          {text}
+        </span>
+      </div>
+
+      <CheckCircle2
+        size={16}
+        color="#059669"
+      />
+    </div>
+  );
+}
+
+function getDonutGradient(items, total) {
+  if (!total) {
+    return "#e2e8f0 0deg 360deg";
+  }
+
+  const colors = {
+    Low: "#059669",
+    Medium: "#d97706",
+    High: "#ea580c",
+    Critical: "#dc2626",
+  };
+
+  let current = 0;
+
+  const stops = items.map((item) => {
+    const percentage =
+      (Number(item?.value || 0) /
+        total) *
+      360;
+
+    const start = current;
+    const end =
+      current + percentage;
+
+    current = end;
+
+    return `${
+      colors[item.label] ||
+      "#64748b"
+    } ${start}deg ${end}deg`;
+  });
+
+  return `conic-gradient(${stops.join(", ")})`;
+}
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    padding: "28px 30px 50px",
+    background: "#f5f8f6",
+    color: "#0f172a",
+    fontFamily:
+      "Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+  },
+
+  header: {
+    maxWidth: 1220,
+    margin: "0 auto 20px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    gap: 16,
+    flexWrap: "wrap",
+  },
+
+  eyebrow: {
+    fontSize: 10,
+    fontWeight: 900,
+    letterSpacing: "1px",
+    color: "#059669",
+  },
+
+  title: {
+    margin: "5px 0 0",
+    fontSize: 34,
+    fontWeight: 900,
+    lineHeight: 1.1,
+  },
+
+  subtitle: {
+    margin: "7px 0 0",
+    color: "#64748b",
+    fontSize: 13,
+    maxWidth: 700,
+    lineHeight: 1.5,
+  },
+
+  headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+
+  periodSelect: {
+    border: "1px solid #dbe5df",
+    background: "#ffffff",
+    borderRadius: 11,
+    padding: "10px 11px",
+    outline: 0,
+    color: "#334155",
+    fontSize: 10,
+    fontWeight: 800,
+  },
+
+  exportButton: {
+    border: 0,
+    background: "#059669",
+    color: "#ffffff",
+    borderRadius: 11,
+    padding: "10px 12px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    fontSize: 10,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+
+  refreshButton: {
+    border: "1px solid #dbe5df",
+    background: "#ffffff",
+    color: "#334155",
+    borderRadius: 11,
+    padding: "10px 12px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    fontSize: 10,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+
+  demoBanner: {
+    maxWidth: 1220,
+    margin: "0 auto 12px",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    background: "#eff6ff",
+    border: "1px solid #bfdbfe",
+    color: "#1d4ed8",
+    padding: "10px 12px",
+    borderRadius: 13,
+    fontSize: 10,
+    fontWeight: 700,
+  },
+
+  errorBanner: {
+    maxWidth: 1220,
+    margin: "0 auto 12px",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    background: "#fef2f2",
+    border: "1px solid #fecaca",
+    color: "#b91c1c",
+    padding: "10px 12px",
+    borderRadius: 13,
+    fontSize: 10,
+    fontWeight: 700,
+  },
+
+  statsGrid: {
+    maxWidth: 1220,
+    margin: "0 auto 13px",
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(4, minmax(0, 1fr))",
+    gap: 12,
+  },
+
+  statCard: {
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 17,
+    padding: 14,
+    boxShadow:
+      "0 8px 22px rgba(15,23,42,0.04)",
+  },
+
+  statTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  statIcon: {
+    width: 35,
+    height: 35,
+    borderRadius: 10,
+    background: "#ecfdf5",
+    color: "#047857",
+    display: "grid",
+    placeItems: "center",
+  },
+
+  statDangerIcon: {
+    background: "#fef2f2",
+    color: "#dc2626",
+  },
+
+  statChange: {
+    fontSize: 9,
+    fontWeight: 900,
+    color: "#15803d",
+  },
+
+  statValue: {
+    display: "block",
+    marginTop: 12,
+    fontSize: 25,
+    fontWeight: 900,
+  },
+
+  statLabel: {
+    display: "block",
+    marginTop: 3,
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: 800,
+  },
+
+  overviewGrid: {
+    maxWidth: 1220,
+    margin: "0 auto 16px",
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(4, minmax(0, 1fr))",
+    gap: 10,
+  },
+
+  overviewCard: {
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 15,
+    padding: 12,
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+  },
+
+  overviewIcon: {
+    width: 33,
+    height: 33,
+    borderRadius: 10,
+    background: "#f0fdf4",
+    color: "#15803d",
+    display: "grid",
+    placeItems: "center",
+  },
+
+  overviewValue: {
+    display: "block",
+    fontSize: 18,
+    fontWeight: 900,
+  },
+
+  overviewLabel: {
+    display: "block",
+    marginTop: 2,
+    color: "#94a3b8",
+    fontSize: 9,
+    fontWeight: 700,
+  },
+
+  chartGrid: {
+    maxWidth: 1220,
+    margin: "0 auto 15px",
+    display: "grid",
+    gridTemplateColumns:
+      "minmax(0, 1.4fr) minmax(360px, 1fr)",
+    gap: 15,
+  },
+
+  bottomGrid: {
+    maxWidth: 1220,
+    margin: "0 auto",
+    display: "grid",
+    gridTemplateColumns:
+      "minmax(0, 1fr) minmax(0, 1fr)",
+    gap: 15,
+  },
+
+  card: {
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 19,
+    padding: 16,
+    boxShadow:
+      "0 10px 30px rgba(15,23,42,0.04)",
+  },
+
+  cardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 17,
+  },
+
+  cardTitle: {
+    margin: 0,
+    fontSize: 15,
+    fontWeight: 900,
+  },
+
+  cardSubtitle: {
+    margin: "4px 0 0",
+    color: "#94a3b8",
+    fontSize: 9,
+  },
+
+  barChart: {
+    height: 270,
+    display: "flex",
+    alignItems: "stretch",
+    gap: 8,
+    position: "relative",
+    padding:
+      "12px 6px 25px",
+    borderBottom:
+      "1px solid #e2e8f0",
+  },
+
+  chartGridLine: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: "25%",
+    borderTop: "1px dashed #edf2ef",
+  },
+
+  chartGridLineTwo: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: "50%",
+    borderTop: "1px dashed #edf2ef",
+  },
+
+  chartGridLineThree: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: "75%",
+    borderTop: "1px dashed #edf2ef",
+  },
+
+  barColumn: {
+    flex: 1,
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    minWidth: 0,
+    position: "relative",
+    zIndex: 2,
+  },
+
+  barValue: {
+    fontSize: 8,
+    color: "#64748b",
+    fontWeight: 800,
+    marginBottom: 4,
+  },
+
+  barArea: {
+    width: "100%",
+    height: "78%",
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+
+  bar: {
+    width: "62%",
+    minWidth: 7,
+    maxWidth: 24,
+    background:
+      "linear-gradient(180deg, #10b981 0%, #059669 100%)",
+    borderRadius:
+      "6px 6px 0 0",
+  },
+
+  barMonth: {
+    position: "absolute",
+    bottom: 0,
+    fontSize: 8,
+    color: "#94a3b8",
+  },
+
+  chartNote: {
+    marginTop: 12,
+    color: "#64748b",
+    fontSize: 9,
+    lineHeight: 1.6,
+  },
+
+  riskLayout: {
+    minHeight: 270,
+    display: "flex",
+    alignItems: "center",
+    gap: 30,
+  },
+
+  donutWrap: {
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    flex: "0 0 190px",
+  },
+
+  donut: {
+    width: 185,
+    height: 185,
+    borderRadius: "50%",
+    position: "relative",
+    display: "grid",
+    placeItems: "center",
+  },
+
+  donutInner: {
+    width: 126,
+    height: 126,
+    borderRadius: "50%",
+    background: "#ffffff",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+    boxShadow:
+      "0 4px 14px rgba(15,23,42,0.05)",
+  },
+
+  legend: {
+    flex: 1,
+    display: "grid",
+    gap: 14,
+  },
+
+  legendRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  legendLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  legendDot: {
+    width: 9,
+    height: 9,
+    borderRadius: "50%",
+  },
+
+  legendName: {
+    color: "#475569",
+    fontSize: 10,
+    fontWeight: 700,
+  },
+
+  legendValue: {
+    fontSize: 10,
+    color: "#0f172a",
+  },
+
+  loading: {
+    maxWidth: 1220,
+    margin: "0 auto",
+    minHeight: 360,
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 9,
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: 700,
+  },
+
+  spinner: {
+    animation:
+      "analyticsSpin 1s linear infinite",
+  },
+
+  performanceRow: {
+    marginBottom: 18,
+  },
+
+  performanceTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 7,
+  },
+
+  performanceName: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    color: "#475569",
+    fontSize: 10,
+    fontWeight: 750,
+  },
+
+  performanceIcon: {
+    width: 29,
+    height: 29,
+    borderRadius: 8,
+    background: "#ecfdf5",
+    color: "#047857",
+    display: "grid",
+    placeItems: "center",
+  },
+
+  track: {
+    width: "100%",
+    height: 7,
+    borderRadius: 999,
+    background: "#f1f5f9",
+    overflow: "hidden",
+  },
+
+  trackFill: {
+    height: "100%",
+    borderRadius: 999,
+    background:
+      "linear-gradient(90deg, #059669 0%, #10b981 100%)",
+  },
+
+  intelligenceRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    padding: "13px 0",
+    borderBottom:
+      "1px solid #f1f5f9",
+  },
+
+  intelligenceTitle: {
+    display: "block",
+    fontSize: 10,
+    color: "#334155",
+  },
+
+  intelligenceText: {
+    display: "block",
+    marginTop: 3,
+    color: "#94a3b8",
+    fontSize: 9,
+  },
+
+  footerNote: {
+    maxWidth: 1220,
+    margin:
+      "18px auto 0",
+    color: "#94a3b8",
+    fontSize: 9,
+    lineHeight: 1.6,
+    textAlign: "center",
+  },
+};

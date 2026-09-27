@@ -1,1346 +1,1004 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  AlertTriangle,
   CalendarDays,
-  CheckCircle2,
-  ChevronRight,
-  Clock3,
+  ClipboardList,
   FileText,
-  FlaskConical,
   HeartPulse,
+  MapPinned,
   PawPrint,
+  RefreshCw,
   Search,
-  ShieldCheck,
+  ShieldAlert,
   Syringe,
   Stethoscope,
-  Pill,
-  X,
 } from "lucide-react";
 
+const API_BASE =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+function getToken() {
+  return localStorage.getItem("pashuAccessToken") || "";
+}
+
+async function apiGet(path) {
+  const token = getToken();
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  if (response.status === 401) {
+    localStorage.removeItem("pashuAccessToken");
+    localStorage.removeItem("pashuUser");
+    localStorage.removeItem("pashuAllowedRole");
+    localStorage.removeItem("pashuRole");
+    window.location.href = "/login";
+    throw new Error("Session expired. Please login again.");
+  }
+
+  if (!response.ok) {
+    let message = "Unable to load health records.";
+    try {
+      const body = await response.json();
+      message = body.detail || message;
+    } catch {
+      // Keep default.
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+function itemsFrom(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function riskClass(risk) {
+  const value = String(risk || "Low").toLowerCase();
+
+  if (value === "critical") return "critical";
+  if (value === "high") return "high";
+  if (value === "medium") return "medium";
+  return "low";
+}
+
 function HealthRecords() {
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("All");
-  const [selectedRecord, setSelectedRecord] = useState(null);
+  const [animals, setAnimals] = useState([]);
+  const [cases, setCases] = useState([]);
+  const [selectedAnimalId, setSelectedAnimalId] = useState("all");
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
 
-  const animals = [
-    {
-      id: "AN-1024",
-      name: "Gauri",
-      type: "Cow",
-      breed: "Gir",
-      location: "Nashik",
-      score: 92,
-      risk: "Low",
-      lastCheck: "Sep 24, 2026",
-      records: 8,
-    },
-    {
-      id: "AN-1025",
-      name: "Moti",
-      type: "Buffalo",
-      breed: "Murrah",
-      location: "Pune",
-      score: 68,
-      risk: "Medium",
-      lastCheck: "Sep 23, 2026",
-      records: 11,
-    },
-    {
-      id: "AN-1026",
-      name: "Laxmi",
-      type: "Cow",
-      breed: "Sahiwal",
-      location: "Satara",
-      score: 42,
-      risk: "High",
-      lastCheck: "Sep 25, 2026",
-      records: 14,
-    },
-    {
-      id: "AN-1027",
-      name: "Raja",
-      type: "Goat",
-      breed: "Osmanabadi",
-      location: "Ahmednagar",
-      score: 31,
-      risk: "Critical",
-      lastCheck: "Sep 27, 2026",
-      records: 17,
-    },
-    {
-      id: "AN-1028",
-      name: "Kali",
-      type: "Sheep",
-      breed: "Deccani",
-      location: "Solapur",
-      score: 81,
-      risk: "Low",
-      lastCheck: "Sep 22, 2026",
-      records: 7,
-    },
-    {
-      id: "AN-1029",
-      name: "Maya",
-      type: "Cow",
-      breed: "Jersey",
-      location: "Thane",
-      score: 57,
-      risk: "Medium",
-      lastCheck: "Sep 21, 2026",
-      records: 10,
-    },
-  ];
+  async function loadRecords(firstLoad = false) {
+    try {
+      setError("");
 
-  const records = [
-    {
-      id: "REC-501",
-      animal: "Raja",
-      animalId: "AN-1027",
-      category: "AI Screening",
-      title: "High-risk respiratory screening",
-      description:
-        "Simulated AI screening identified elevated respiratory risk based on reported symptoms and observations.",
-      date: "Sep 27, 2026",
-      status: "Needs Review",
-      icon: "ai",
-    },
-    {
-      id: "REC-500",
-      animal: "Raja",
-      animalId: "AN-1027",
-      category: "Veterinarian",
-      title: "Veterinarian review requested",
-      description:
-        "Case assigned for clinical assessment and treatment planning.",
-      date: "Sep 27, 2026",
-      status: "Assigned",
-      icon: "vet",
-    },
-    {
-      id: "REC-499",
-      animal: "Raja",
-      animalId: "AN-1027",
-      category: "Laboratory",
-      title: "Respiratory panel requested",
-      description:
-        "Sample collected for laboratory investigation.",
-      date: "Sep 26, 2026",
-      status: "Processing",
-      icon: "lab",
-    },
-    {
-      id: "REC-498",
-      animal: "Raja",
-      animalId: "AN-1027",
-      category: "Treatment",
-      title: "Treatment started",
-      description:
-        "Treatment plan recorded by the veterinarian with follow-up monitoring.",
-      date: "Sep 25, 2026",
-      status: "Active",
-      icon: "treatment",
-    },
-    {
-      id: "REC-497",
-      animal: "Raja",
-      animalId: "AN-1027",
-      category: "Vaccination",
-      title: "FMD vaccination completed",
-      description:
-        "Vaccination record updated in the animal health history.",
-      date: "Aug 18, 2026",
-      status: "Completed",
-      icon: "vaccine",
-    },
-    {
-      id: "REC-496",
-      animal: "Raja",
-      animalId: "AN-1027",
-      category: "Veterinarian",
-      title: "Routine veterinary visit",
-      description:
-        "Routine health examination completed.",
-      date: "Aug 12, 2026",
-      status: "Completed",
-      icon: "vet",
-    },
-  ];
+      if (firstLoad) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
 
-  const filteredAnimals = useMemo(() => {
-    return animals.filter((animal) => {
-      const text = (
-        animal.name +
-        " " +
-        animal.id +
-        " " +
-        animal.type +
-        " " +
-        animal.breed +
-        " " +
-        animal.location
-      ).toLowerCase();
+      const [animalsData, casesData] = await Promise.all([
+        apiGet("/api/animals?limit=100"),
+        apiGet("/api/cases?limit=200"),
+      ]);
 
-      const matchesSearch = text.includes(
-        search.toLowerCase()
-      );
-
-      return matchesSearch;
-    });
-  }, [search]);
-
-  const filteredRecords = useMemo(() => {
-    return records.filter((record) => {
-      const matchesType =
-        typeFilter === "All" ||
-        record.category === typeFilter;
-
-      const text = (
-        record.title +
-        " " +
-        record.description +
-        " " +
-        record.animal +
-        " " +
-        record.animalId +
-        " " +
-        record.category
-      ).toLowerCase();
-
-      const matchesSearch = text.includes(
-        search.toLowerCase()
-      );
-
-      return matchesType && matchesSearch;
-    });
-  }, [search, typeFilter]);
-
-  function riskClass(risk) {
-    return risk.toLowerCase();
+      setAnimals(itemsFrom(animalsData));
+      setCases(itemsFrom(casesData));
+    } catch (err) {
+      setError(err?.message || "Unable to load health records.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }
 
-  function recordIcon(icon) {
-    if (icon === "ai") {
-      return <Activity size={18} />;
-    }
+  useEffect(() => {
+    loadRecords(true);
+  }, []);
 
-    if (icon === "vet") {
-      return <Stethoscope size={18} />;
-    }
+  const selectedAnimal = useMemo(() => {
+    if (selectedAnimalId === "all") return null;
 
-    if (icon === "lab") {
-      return <FlaskConical size={18} />;
-    }
+    return (
+      animals.find((animal) => String(animal.id) === String(selectedAnimalId)) ||
+      null
+    );
+  }, [animals, selectedAnimalId]);
 
-    if (icon === "treatment") {
-      return <Pill size={18} />;
-    }
+  const filteredCases = useMemo(() => {
+    const search = query.trim().toLowerCase();
 
-    if (icon === "vaccine") {
-      return <Syringe size={18} />;
-    }
+    return cases
+      .filter((item) => {
+        if (
+          selectedAnimalId !== "all" &&
+          String(item?.animal_id || "") !== String(selectedAnimalId)
+        ) {
+          return false;
+        }
 
-    return <FileText size={18} />;
-  }
+        if (!search) return true;
+
+        const text = [
+          item?.animal_name,
+          item?.condition,
+          item?.village,
+          item?.risk,
+          item?.stage,
+          item?.status,
+          item?.notes,
+          ...(Array.isArray(item?.symptoms) ? item.symptoms : []),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        return text.includes(search);
+      })
+      .sort((a, b) => {
+        const aTime = new Date(a?.created_at || 0).getTime();
+        const bTime = new Date(b?.created_at || 0).getTime();
+        return bTime - aTime;
+      });
+  }, [cases, selectedAnimalId, query]);
+
+  const stats = useMemo(() => {
+    const selectedCases =
+      selectedAnimalId === "all"
+        ? cases
+        : cases.filter(
+            (item) =>
+              String(item?.animal_id || "") === String(selectedAnimalId)
+          );
+
+    const active = selectedCases.filter(
+      (item) =>
+        String(item?.stage || "").toLowerCase() !== "resolved" &&
+        String(item?.status || "").toLowerCase() !== "closed"
+    ).length;
+
+    const highRisk = selectedCases.filter((item) =>
+      ["high", "critical"].includes(
+        String(item?.risk || "").toLowerCase()
+      )
+    ).length;
+
+    return {
+      records: selectedCases.length,
+      active,
+      highRisk,
+      animals: selectedAnimalId === "all" ? animals.length : 1,
+    };
+  }, [animals.length, cases, selectedAnimalId]);
 
   return (
     <>
       <style>{`
-        .records-page {
+        .health-records-page {
           max-width: 1250px;
           margin: 0 auto;
-          padding-bottom: 35px;
+          padding-bottom: 36px;
+          color: #173e35;
         }
 
-        .records-header {
+        .health-records-page * {
+          box-sizing: border-box;
+        }
+
+        .hr-header {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          gap: 20px;
-          margin-bottom: 20px;
+          gap: 18px;
+          margin-bottom: 18px;
         }
 
-        .records-header h1 {
+        .hr-header h1 {
           margin: 0;
           color: #173e35;
           font-size: 29px;
         }
 
-        .records-header p {
-          margin: 6px 0 0;
-          color: #7e8c85;
+        .hr-header p {
+          margin: 7px 0 0;
+          max-width: 680px;
+          color: #7e8e87;
           font-size: 12px;
+          line-height: 1.55;
         }
 
-        .header-action {
-          height: 38px;
-          border: 0;
-          border-radius: 9px;
-          background: #dff46b;
-          color: #29452e;
-          padding: 0 14px;
+        .hr-header-actions {
           display: flex;
+          gap: 8px;
           align-items: center;
-          gap: 7px;
-          cursor: pointer;
-          font-size: 10px;
-          font-weight: 900;
-        }
-
-        .record-stats {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 13px;
-          margin-bottom: 16px;
-        }
-
-        .record-stat {
-          background: #fff;
-          border: 1px solid #e2ebe7;
-          border-radius: 13px;
-          padding: 15px;
-          display: flex;
-          gap: 11px;
-          align-items: center;
-        }
-
-        .record-stat-icon {
-          width: 39px;
-          height: 39px;
-          border-radius: 10px;
-          background: #f1f6e9;
-          color: #719335;
-          display: grid;
-          place-items: center;
-        }
-
-        .record-stat b {
-          display: block;
-          color: #284c42;
-          font-size: 19px;
-        }
-
-        .record-stat span {
-          color: #87938d;
-          font-size: 9px;
-        }
-
-        .records-toolbar {
-          background: #fff;
-          border: 1px solid #e2ebe7;
-          border-radius: 14px;
-          padding: 13px;
-          display: flex;
-          gap: 9px;
           flex-wrap: wrap;
-          margin-bottom: 16px;
         }
 
-        .records-search {
-          flex: 1;
-          min-width: 220px;
+        .hr-select,
+        .hr-search {
           height: 38px;
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 0 10px;
-          border: 1px solid #dce6e1;
-          border-radius: 8px;
-          background: #fbfdfc;
-        }
-
-        .records-search svg {
-          color: #84928c;
-        }
-
-        .records-search input {
-          width: 100%;
-          border: 0;
-          outline: 0;
-          background: transparent;
-          color: #34574d;
-          font-size: 11px;
-        }
-
-        .records-filter {
-          height: 38px;
-          min-width: 145px;
-          border: 1px solid #dce6e1;
-          border-radius: 8px;
+          border: 1px solid #dfe9e4;
+          border-radius: 9px;
           background: #fff;
-          color: #526b62;
-          padding: 0 10px;
+          color: #506d63;
           outline: none;
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 700;
         }
 
-        .records-layout {
-          display: grid;
-          grid-template-columns: 0.85fr 1.55fr;
-          gap: 16px;
+        .hr-select {
+          min-width: 190px;
+          padding: 0 10px;
         }
 
-        .animals-panel,
-        .timeline-panel {
+        .hr-search-wrap {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          height: 38px;
+          padding-left: 10px;
+          border: 1px solid #dfe9e4;
+          border-radius: 9px;
           background: #fff;
-          border: 1px solid #e2ebe7;
-          border-radius: 15px;
-          overflow: hidden;
         }
 
-        .panel-header {
-          padding: 16px;
-          border-bottom: 1px solid #e8eeeb;
+        .hr-search-wrap svg {
+          color: #93a19b;
         }
 
-        .panel-header h2 {
-          margin: 0;
-          color: #24483e;
-          font-size: 16px;
+        .hr-search {
+          width: 190px;
+          border: 0;
+          padding: 0 10px 0 0;
         }
 
-        .panel-header p {
-          margin: 5px 0 0;
-          color: #89958f;
+        .hr-refresh {
+          width: 38px;
+          height: 38px;
+          border: 1px solid #dfe9e4;
+          border-radius: 9px;
+          background: #fff;
+          color: #55736a;
+          display: grid;
+          place-items: center;
+          cursor: pointer;
+        }
+
+        .hr-refresh.spinning svg {
+          animation: hr-spin .8s linear infinite;
+        }
+
+        @keyframes hr-spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .hr-stats {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 12px;
+          margin-bottom: 15px;
+        }
+
+        .hr-stat {
+          background: #fff;
+          border: 1px solid #e1ebe7;
+          border-radius: 13px;
+          padding: 14px;
+        }
+
+        .hr-stat-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          display: grid;
+          place-items: center;
+        }
+
+        .hr-stat-icon.green {
+          background: #edf7e3;
+          color: #668b37;
+        }
+
+        .hr-stat-icon.blue {
+          background: #e8f3fa;
+          color: #397793;
+        }
+
+        .hr-stat-icon.orange {
+          background: #fff0dc;
+          color: #b87523;
+        }
+
+        .hr-stat-icon.red {
+          background: #ffe8e5;
+          color: #b44b41;
+        }
+
+        .hr-stat strong {
+          display: block;
+          margin-top: 11px;
+          color: #294d43;
+          font-size: 23px;
+        }
+
+        .hr-stat span {
+          display: block;
+          margin-top: 5px;
+          color: #7f8e88;
           font-size: 10px;
         }
 
-        .animal-record {
-          padding: 13px;
-          border-bottom: 1px solid #edf1ef;
+        .hr-error {
           display: flex;
-          gap: 10px;
           align-items: center;
+          gap: 8px;
+          margin-bottom: 14px;
+          padding: 11px 13px;
+          border-radius: 10px;
+          border: 1px solid #f0d7d3;
+          background: #fff2f0;
+          color: #a64b43;
+          font-size: 10px;
+        }
+
+        .hr-error button {
+          margin-left: auto;
+          border: 0;
+          border-radius: 7px;
+          background: #a64b43;
+          color: #fff;
+          padding: 6px 9px;
+          font-size: 9px;
+          font-weight: 800;
           cursor: pointer;
-          transition: .18s;
         }
 
-        .animal-record:hover {
-          background: #fafcfb;
+        .hr-layout {
+          display: grid;
+          grid-template-columns: .75fr 1.25fr;
+          gap: 15px;
         }
 
-        .animal-record.selected {
-          background: #f5f9ed;
-          border-left: 3px solid #91b63f;
+        .hr-card {
+          background: #fff;
+          border: 1px solid #e1ebe7;
+          border-radius: 14px;
+          box-shadow: 0 6px 20px rgba(44, 69, 59, .04);
+          overflow: hidden;
         }
 
-        .animal-record-avatar {
+        .hr-card-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 15px 17px 12px;
+          border-bottom: 1px solid #edf2ef;
+        }
+
+        .hr-card-head h2 {
+          margin: 0;
+          color: #294d43;
+          font-size: 15px;
+        }
+
+        .hr-card-head p {
+          margin: 4px 0 0;
+          color: #89958f;
+          font-size: 9px;
+        }
+
+        .hr-animal-list {
+          max-height: 570px;
+          overflow: auto;
+          padding: 7px 10px;
+        }
+
+        .hr-animal-item {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 11px;
+          margin: 2px 0;
+          border: 1px solid transparent;
+          border-radius: 10px;
+          background: transparent;
+          cursor: pointer;
+          text-align: left;
+        }
+
+        .hr-animal-item:hover {
+          background: #f7faf7;
+        }
+
+        .hr-animal-item.active {
+          background: #eef6e3;
+          border-color: #dde9d2;
+        }
+
+        .hr-animal-avatar {
           width: 38px;
           height: 38px;
-          border-radius: 10px;
-          background: #edf4e2;
-          color: #5f7f32;
+          flex: 0 0 38px;
           display: grid;
           place-items: center;
-          font-weight: 900;
-          font-size: 13px;
+          border-radius: 10px;
+          background: #eef4e8;
+          color: #6b8d3d;
         }
 
-        .animal-record-main {
+        .hr-animal-copy {
           flex: 1;
           min-width: 0;
         }
 
-        .animal-record-main b {
+        .hr-animal-copy strong {
           display: block;
-          color: #315248;
+          color: #405e55;
+          font-size: 10px;
+        }
+
+        .hr-animal-copy span {
+          display: block;
+          margin-top: 3px;
+          color: #899690;
+          font-size: 8px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .hr-mini-risk {
+          display: inline-block;
+          padding: 4px 6px;
+          border-radius: 999px;
+          font-size: 7px;
+          font-weight: 900;
+        }
+
+        .hr-mini-risk.low {
+          background: #eef8df;
+          color: #5f8235;
+        }
+
+        .hr-mini-risk.medium {
+          background: #fff8df;
+          color: #91772b;
+        }
+
+        .hr-mini-risk.high {
+          background: #fff0df;
+          color: #b36e24;
+        }
+
+        .hr-mini-risk.critical {
+          background: #ffe8e5;
+          color: #b1483e;
+        }
+
+        .hr-timeline {
+          padding: 9px 17px 16px;
+        }
+
+        .hr-selected-animal {
+          margin: 13px 0 5px;
+          padding: 12px;
+          border-radius: 10px;
+          background: #f4f8f2;
+          border: 1px solid #e3ece0;
+        }
+
+        .hr-selected-animal strong {
+          display: block;
+          color: #35584d;
           font-size: 11px;
         }
 
-        .animal-record-main span {
+        .hr-selected-animal span {
           display: block;
-          margin-top: 3px;
-          color: #85928c;
+          margin-top: 4px;
+          color: #85938d;
           font-size: 9px;
         }
 
-        .record-risk {
-          padding: 4px 7px;
-          border-radius: 999px;
-          font-size: 8px;
-          font-weight: 900;
+        .hr-timeline-item {
+          position: relative;
+          display: grid;
+          grid-template-columns: 36px 1fr;
+          gap: 11px;
+          padding: 12px 0;
         }
 
-        .record-risk.low {
-          color: #5d8132;
-          background: #eef8df;
+        .hr-timeline-item:not(:last-child)::before {
+          content: "";
+          position: absolute;
+          left: 17px;
+          top: 42px;
+          bottom: -3px;
+          width: 1px;
+          background: #dfe9e4;
         }
 
-        .record-risk.medium {
-          color: #89761d;
-          background: #fff8d9;
-        }
-
-        .record-risk.high {
-          color: #b36b1c;
-          background: #fff0df;
-        }
-
-        .record-risk.critical {
-          color: #b43e3e;
-          background: #fde8e8;
-        }
-
-        .selected-animal {
-          margin: 15px;
-          padding: 13px;
-          border-radius: 11px;
-          background: #f7faf8;
-          border: 1px solid #e4ece8;
-        }
-
-        .selected-animal-top {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .selected-animal-avatar {
-          width: 42px;
-          height: 42px;
-          border-radius: 11px;
+        .hr-timeline-icon {
+          width: 35px;
+          height: 35px;
+          border-radius: 10px;
           display: grid;
           place-items: center;
-          background: #dfeecb;
-          color: #55782d;
-          font-weight: 900;
+          position: relative;
+          z-index: 1;
+          background: #eef6e3;
+          color: #698d39;
         }
 
-        .selected-animal h3 {
-          margin: 0;
-          color: #2d5147;
-          font-size: 13px;
+        .hr-timeline-copy strong {
+          display: block;
+          color: #3d5c52;
+          font-size: 10px;
         }
 
-        .selected-animal p {
+        .hr-timeline-copy p {
           margin: 4px 0 0;
-          color: #829089;
+          color: #7e8d87;
           font-size: 9px;
+          line-height: 1.5;
         }
 
-        .health-score-box {
-          margin-top: 12px;
-        }
-
-        .health-score-line {
+        .hr-meta-line {
           display: flex;
-          justify-content: space-between;
-          color: #60766c;
-          font-size: 9px;
+          align-items: center;
+          gap: 8px;
+          margin-top: 5px;
+          flex-wrap: wrap;
+        }
+
+        .hr-date {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          color: #9aa6a1;
+          font-size: 8px;
+        }
+
+        .hr-stage {
+          color: #6b7e76;
+          background: #f3f6f4;
+          border-radius: 999px;
+          padding: 4px 6px;
+          font-size: 7px;
           font-weight: 800;
         }
 
-        .health-track {
-          height: 6px;
-          border-radius: 99px;
-          background: #e8eee9;
-          overflow: hidden;
-          margin-top: 6px;
+        .hr-empty {
+          padding: 50px 20px;
+          text-align: center;
+          color: #96a19d;
+          font-size: 10px;
         }
 
-        .health-track span {
+        .hr-empty svg {
           display: block;
-          height: 100%;
-          border-radius: 99px;
-          background: #91b63f;
+          margin: 0 auto 9px;
         }
 
-        .animal-info-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 6px;
-          margin-top: 12px;
+        .hr-loading {
+          padding: 50px 20px;
+          text-align: center;
+          color: #8d9b95;
+          font-size: 10px;
         }
 
-        .animal-info-box {
-          background: #fff;
-          padding: 8px;
-          border-radius: 7px;
-        }
-
-        .animal-info-box span {
+        .hr-loading svg {
           display: block;
-          color: #929d98;
-          font-size: 7px;
-          margin-bottom: 3px;
+          margin: 0 auto 9px;
+          animation: hr-spin 1s linear infinite;
         }
 
-        .animal-info-box b {
-          color: #526a60;
-          font-size: 9px;
-        }
-
-        .timeline-header {
-          padding: 16px;
-          border-bottom: 1px solid #e8eeeb;
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-          align-items: center;
-        }
-
-        .timeline-header h2 {
-          margin: 0;
-          color: #24483e;
-          font-size: 16px;
-        }
-
-        .timeline-header span {
-          color: #89958f;
-          font-size: 9px;
-        }
-
-        .timeline {
-          padding: 18px 20px;
-        }
-
-        .timeline-item {
-          position: relative;
-          display: grid;
-          grid-template-columns: 26px 1fr;
-          gap: 12px;
-          padding-bottom: 22px;
-        }
-
-        .timeline-item:last-child {
-          padding-bottom: 0;
-        }
-
-        .timeline-line {
-          position: absolute;
-          left: 12px;
-          top: 25px;
-          bottom: 0;
-          width: 1px;
-          background: #dce6e1;
-        }
-
-        .timeline-icon {
-          width: 25px;
-          height: 25px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          position: relative;
-          z-index: 2;
-          background: #edf4e2;
-          color: #6b8e34;
-        }
-
-        .timeline-content {
-          padding-bottom: 2px;
-        }
-
-        .timeline-top {
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-        }
-
-        .timeline-top h3 {
-          margin: 0;
-          color: #315248;
-          font-size: 12px;
-        }
-
-        .timeline-date {
-          color: #8a9791;
+        .hr-note {
+          margin-top: 13px;
+          padding: 10px 12px;
+          border-radius: 9px;
+          background: #f2f6ec;
+          color: #74836e;
           font-size: 8px;
-          white-space: nowrap;
-        }
-
-        .timeline-content p {
-          margin: 5px 0 7px;
-          color: #7d8b85;
-          font-size: 9px;
           line-height: 1.55;
         }
 
-        .record-category {
-          display: inline-flex;
-          padding: 4px 7px;
-          border-radius: 999px;
-          background: #f0f5f2;
-          color: #63766e;
-          font-size: 7px;
-          font-weight: 900;
-        }
-
-        .record-status {
-          display: inline-flex;
-          margin-left: 5px;
-          padding: 4px 7px;
-          border-radius: 999px;
-          background: #eef8df;
-          color: #5d8132;
-          font-size: 7px;
-          font-weight: 900;
-        }
-
-        .timeline-actions {
-          margin-top: 7px;
-          display: flex;
-          gap: 7px;
-        }
-
-        .timeline-actions button {
-          height: 29px;
-          padding: 0 9px;
-          border-radius: 7px;
-          border: 1px solid #dce6e1;
-          background: #fff;
-          color: #526b62;
-          cursor: pointer;
-          font-size: 8px;
-          font-weight: 800;
-        }
-
-        .timeline-actions button:hover {
-          background: #f5f8f6;
-        }
-
-        .empty-records {
-          text-align: center;
-          padding: 55px 20px;
-          color: #89958f;
-          font-size: 10px;
-        }
-
-        .modal-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(24, 47, 40, .4);
-          display: grid;
-          place-items: center;
-          z-index: 1000;
-          padding: 20px;
-        }
-
-        .record-modal {
-          width: min(540px, 100%);
-          background: #fff;
-          border-radius: 16px;
-          overflow: hidden;
-          box-shadow: 0 20px 60px rgba(20,50,40,.2);
-        }
-
-        .modal-head {
-          padding: 16px;
-          border-bottom: 1px solid #e7eeeb;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .modal-head h2 {
-          margin: 0;
-          color: #24483e;
-          font-size: 17px;
-        }
-
-        .close-btn {
-          width: 32px;
-          height: 32px;
-          border: 0;
-          background: #f3f7f5;
-          color: #61766d;
-          border-radius: 8px;
-          display: grid;
-          place-items: center;
-          cursor: pointer;
-        }
-
-        .modal-content {
-          padding: 18px;
-        }
-
-        .modal-icon {
-          width: 43px;
-          height: 43px;
-          border-radius: 11px;
-          background: #edf4e2;
-          color: #668936;
-          display: grid;
-          place-items: center;
-          margin-bottom: 12px;
-        }
-
-        .modal-content h3 {
-          margin: 0;
-          color: #2e5147;
-          font-size: 15px;
-        }
-
-        .modal-content p {
-          color: #7b8983;
-          font-size: 10px;
-          line-height: 1.6;
-        }
-
-        .modal-details {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-          margin-top: 14px;
-        }
-
-        .modal-detail {
-          background: #f7faf8;
-          border-radius: 9px;
-          padding: 10px;
-        }
-
-        .modal-detail span {
-          display: block;
-          color: #8d9994;
-          font-size: 7px;
-          margin-bottom: 4px;
-        }
-
-        .modal-detail b {
-          color: #49665d;
-          font-size: 9px;
-        }
-
-        .modal-footer {
-          padding: 13px 17px;
-          border-top: 1px solid #e7eeeb;
-          display: flex;
-          justify-content: flex-end;
-          gap: 8px;
-        }
-
-        .modal-footer button {
-          height: 34px;
-          padding: 0 12px;
-          border: 1px solid #dce6e1;
-          border-radius: 8px;
-          background: #fff;
-          color: #526b62;
-          cursor: pointer;
-          font-size: 9px;
-          font-weight: 800;
-        }
-
-        .modal-footer .primary {
-          background: #dff46b;
-          border-color: #dff46b;
-          color: #29452e;
-        }
-
-        @media (max-width: 1000px) {
-          .records-layout {
+        @media (max-width: 950px) {
+          .hr-layout {
             grid-template-columns: 1fr;
           }
         }
 
-        @media (max-width: 700px) {
-          .record-stats {
+        @media (max-width: 760px) {
+          .hr-header {
+            flex-direction: column;
+          }
+
+          .hr-header-actions {
+            width: 100%;
+          }
+
+          .hr-select {
+            flex: 1;
+          }
+
+          .hr-search-wrap {
+            flex: 1;
+          }
+
+          .hr-search {
+            width: 100%;
+          }
+
+          .hr-stats {
             grid-template-columns: 1fr 1fr;
           }
+        }
 
-          .records-header {
-            flex-direction: column;
-          }
-
-          .timeline-top {
-            flex-direction: column;
-            gap: 3px;
-          }
-
-          .modal-details {
+        @media (max-width: 520px) {
+          .hr-stats {
             grid-template-columns: 1fr;
           }
         }
       `}</style>
 
-      <div className="records-page">
-
-        <div className="records-header">
-
+      <div className="health-records-page">
+        <div className="hr-header">
           <div>
             <h1>Health Records</h1>
             <p>
-              Complete animal health timelines,
-              treatments, vaccinations and
-              veterinary visits.
+              Animal-centred health history built from live animal and case
+              data. Review disease concerns, risk, workflow stage and recorded
+              observations in one timeline.
             </p>
           </div>
 
-          <button className="header-action">
-            <FileText size={15} />
-            Export Records
-          </button>
+          <div className="hr-header-actions">
+            <select
+              className="hr-select"
+              value={selectedAnimalId}
+              onChange={(event) => setSelectedAnimalId(event.target.value)}
+            >
+              <option value="all">All animals</option>
+              {animals.map((animal) => (
+                <option key={animal.id} value={animal.id}>
+                  {animal.name || "Unnamed"} · {animal.species || "Animal"}
+                </option>
+              ))}
+            </select>
 
+            <div className="hr-search-wrap">
+              <Search size={15} />
+              <input
+                className="hr-search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search records..."
+              />
+            </div>
+
+            <button
+              className={`hr-refresh ${refreshing ? "spinning" : ""}`}
+              onClick={() => loadRecords(false)}
+              disabled={refreshing}
+              title="Refresh health records"
+            >
+              <RefreshCw size={16} />
+            </button>
+          </div>
         </div>
 
-        {/* STATS */}
+        {error && (
+          <div className="hr-error">
+            <AlertTriangle size={17} />
+            <span>{error}</span>
+            <button onClick={() => loadRecords(true)}>Retry</button>
+          </div>
+        )}
 
-        <div className="record-stats">
-
-          <div className="record-stat">
-            <div className="record-stat-icon">
-              <HeartPulse size={18} />
+        <div className="hr-stats">
+          <div className="hr-stat">
+            <div className="hr-stat-icon green">
+              <FileText size={17} />
             </div>
-            <div>
-              <b>1,248</b>
-              <span>Total Records</span>
-            </div>
+            <strong>{stats.records}</strong>
+            <span>Recorded health events</span>
           </div>
 
-          <div className="record-stat">
-            <div className="record-stat-icon">
-              <Stethoscope size={18} />
+          <div className="hr-stat">
+            <div className="hr-stat-icon blue">
+              <Activity size={17} />
             </div>
-            <div>
-              <b>286</b>
-              <span>Vet Visits</span>
-            </div>
+            <strong>{stats.active}</strong>
+            <span>Active health cases</span>
           </div>
 
-          <div className="record-stat">
-            <div className="record-stat-icon">
-              <FlaskConical size={18} />
+          <div className="hr-stat">
+            <div className="hr-stat-icon orange">
+              <ShieldAlert size={17} />
             </div>
-            <div>
-              <b>94</b>
-              <span>Lab Results</span>
-            </div>
+            <strong>{stats.highRisk}</strong>
+            <span>High / critical events</span>
           </div>
 
-          <div className="record-stat">
-            <div className="record-stat-icon">
-              <Syringe size={18} />
+          <div className="hr-stat">
+            <div className="hr-stat-icon red">
+              <PawPrint size={17} />
             </div>
-            <div>
-              <b>91%</b>
-              <span>Vaccination Coverage</span>
-            </div>
+            <strong>{stats.animals}</strong>
+            <span>Animals in selection</span>
           </div>
-
         </div>
 
-        {/* TOOLBAR */}
+        <div className="hr-layout">
+          <section className="hr-card">
+            <div className="hr-card-head">
+              <div>
+                <h2>Animal Profiles</h2>
+                <p>Select an animal to view its health timeline.</p>
+              </div>
 
-        <div className="records-toolbar">
-
-          <div className="records-search">
-
-            <Search size={14} />
-
-            <input
-              value={search}
-              onChange={(e) =>
-                setSearch(e.target.value)
-              }
-              placeholder="Search animal, record, case or location..."
-            />
-
-          </div>
-
-          <select
-            className="records-filter"
-            value={typeFilter}
-            onChange={(e) =>
-              setTypeFilter(e.target.value)
-            }
-          >
-            <option value="All">
-              All record types
-            </option>
-            <option value="AI Screening">
-              AI Screening
-            </option>
-            <option value="Veterinarian">
-              Veterinarian
-            </option>
-            <option value="Laboratory">
-              Laboratory
-            </option>
-            <option value="Treatment">
-              Treatment
-            </option>
-            <option value="Vaccination">
-              Vaccination
-            </option>
-          </select>
-
-        </div>
-
-        {/* MAIN */}
-
-        <div className="records-layout">
-
-          {/* ANIMALS */}
-
-          <section className="animals-panel">
-
-            <div className="panel-header">
-
-              <h2>Animal Records</h2>
-
-              <p>
-                Select an animal to view its
-                complete health history.
-              </p>
-
+              <PawPrint size={18} color="#739044" />
             </div>
 
-            {filteredAnimals.map(
-              (animal, index) => (
-                <div
-                  className={`animal-record ${
-                    index === 3
-                      ? "selected"
-                      : ""
+            {loading ? (
+              <div className="hr-loading">
+                <RefreshCw size={25} />
+                <div>Loading animal records...</div>
+              </div>
+            ) : animals.length === 0 ? (
+              <div className="hr-empty">
+                <PawPrint size={27} />
+                <div>No animals have been recorded yet.</div>
+              </div>
+            ) : (
+              <div className="hr-animal-list">
+                <button
+                  className={`hr-animal-item ${
+                    selectedAnimalId === "all" ? "active" : ""
                   }`}
-                  key={animal.id}
+                  onClick={() => setSelectedAnimalId("all")}
                 >
-
-                  <div className="animal-record-avatar">
-                    {animal.name[0]}
+                  <div className="hr-animal-avatar">
+                    <Activity size={18} />
                   </div>
 
-                  <div className="animal-record-main">
-
-                    <b>
-                      {animal.name} ·{" "}
-                      {animal.id}
-                    </b>
-
-                    <span>
-                      {animal.type} ·{" "}
-                      {animal.location}
-                    </span>
-
+                  <div className="hr-animal-copy">
+                    <strong>All animals</strong>
+                    <span>Show the complete health activity</span>
                   </div>
+                </button>
 
-                  <span
-                    className={`record-risk ${riskClass(
-                      animal.risk
-                    )}`}
-                  >
-                    {animal.risk}
-                  </span>
+                {animals.map((animal) => {
+                  const matchingCase = cases.find(
+                    (item) =>
+                      String(item?.animal_id || "") === String(animal.id)
+                  );
 
-                  <ChevronRight
-                    size={14}
-                    color="#9aa7a1"
-                  />
+                  const currentRisk =
+                    matchingCase?.risk ||
+                    animal?.risk ||
+                    animal?.health_status ||
+                    "Low";
 
-                </div>
-              )
-            )}
+                  return (
+                    <button
+                      className={`hr-animal-item ${
+                        String(selectedAnimalId) === String(animal.id)
+                          ? "active"
+                          : ""
+                      }`}
+                      key={animal.id}
+                      onClick={() => setSelectedAnimalId(String(animal.id))}
+                    >
+                      <div className="hr-animal-avatar">
+                        <PawPrint size={18} />
+                      </div>
 
-            {filteredAnimals.length === 0 && (
-              <div className="empty-records">
-                No animals found.
+                      <div className="hr-animal-copy">
+                        <strong>{animal.name || "Unnamed animal"}</strong>
+                        <span>
+                          {animal.species || "Animal"} ·{" "}
+                          {animal.breed || "Breed not recorded"} ·{" "}
+                          {animal.village || "Location not recorded"}
+                        </span>
+                      </div>
+
+                      <span
+                        className={`hr-mini-risk ${riskClass(currentRisk)}`}
+                      >
+                        {currentRisk}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
-
-            <div className="selected-animal">
-
-              <div className="selected-animal-top">
-
-                <div className="selected-animal-avatar">
-                  R
-                </div>
-
-                <div>
-                  <h3>
-                    Raja · AN-1027
-                  </h3>
-
-                  <p>
-                    Goat · Osmanabadi ·
-                    Ahmednagar
-                  </p>
-                </div>
-
-              </div>
-
-              <div className="health-score-box">
-
-                <div className="health-score-line">
-                  <span>
-                    Health Score
-                  </span>
-
-                  <b>31 / 100</b>
-                </div>
-
-                <div className="health-track">
-                  <span
-                    style={{
-                      width: "31%",
-                    }}
-                  />
-                </div>
-
-              </div>
-
-              <div className="animal-info-grid">
-
-                <div className="animal-info-box">
-                  <span>LAST CHECK</span>
-                  <b>Sep 27, 2026</b>
-                </div>
-
-                <div className="animal-info-box">
-                  <span>RECORDS</span>
-                  <b>17 records</b>
-                </div>
-
-                <div className="animal-info-box">
-                  <span>RISK</span>
-                  <b>Critical</b>
-                </div>
-
-                <div className="animal-info-box">
-                  <span>ACTIVE CASE</span>
-                  <b>CS-2048</b>
-                </div>
-
-              </div>
-
-            </div>
-
           </section>
 
-          {/* TIMELINE */}
-
-          <section className="timeline-panel">
-
-            <div className="timeline-header">
-
+          <section className="hr-card">
+            <div className="hr-card-head">
               <div>
-                <h2>
-                  Raja's Health Timeline
-                </h2>
-
-                <span>
-                  AN-1027 · 17 total records
-                </span>
+                <h2>Health Timeline</h2>
+                <p>
+                  {selectedAnimal
+                    ? `${selectedAnimal.name || "Selected animal"}'s recorded case activity`
+                    : "Latest recorded case activity across animals"}
+                </p>
               </div>
 
-              <ShieldCheck
-                size={19}
-                color="#719335"
-              />
-
+              <HeartPulse size={18} color="#739044" />
             </div>
 
-            <div className="timeline">
-
-              {filteredRecords.length === 0 ? (
-                <div className="empty-records">
-                  No health records found.
+            <div className="hr-timeline">
+              {selectedAnimal && (
+                <div className="hr-selected-animal">
+                  <strong>
+                    {selectedAnimal.name || "Unnamed animal"} ·{" "}
+                    {selectedAnimal.species || "Animal"}
+                  </strong>
+                  <span>
+                    ID: {selectedAnimal.id || "—"} · Breed:{" "}
+                    {selectedAnimal.breed || "—"} · Age:{" "}
+                    {selectedAnimal.age ?? "—"} · Location:{" "}
+                    {selectedAnimal.village || "—"}
+                  </span>
                 </div>
-              ) : (
-                filteredRecords.map(
-                  (record, index) => (
-                    <div
-                      className="timeline-item"
-                      key={record.id}
-                    >
-
-                      {index !==
-                        filteredRecords.length -
-                          1 && (
-                        <div className="timeline-line" />
-                      )}
-
-                      <div className="timeline-icon">
-                        {recordIcon(record.icon)}
-                      </div>
-
-                      <div className="timeline-content">
-
-                        <div className="timeline-top">
-
-                          <h3>
-                            {record.title}
-                          </h3>
-
-                          <span className="timeline-date">
-                            {record.date}
-                          </span>
-
-                        </div>
-
-                        <p>
-                          {record.description}
-                        </p>
-
-                        <span className="record-category">
-                          {record.category}
-                        </span>
-
-                        <span className="record-status">
-                          {record.status}
-                        </span>
-
-                        <div className="timeline-actions">
-
-                          <button
-                            onClick={() =>
-                              setSelectedRecord(
-                                record
-                              )
-                            }
-                          >
-                            View details
-                            <ChevronRight
-                              size={11}
-                              style={{
-                                verticalAlign:
-                                  "middle",
-                                marginLeft: 3,
-                              }}
-                            />
-                          </button>
-
-                        </div>
-
-                      </div>
-
-                    </div>
-                  )
-                )
               )}
 
-            </div>
+              {loading ? (
+                <div className="hr-loading">
+                  <RefreshCw size={25} />
+                  <div>Loading health activity...</div>
+                </div>
+              ) : filteredCases.length === 0 ? (
+                <div className="hr-empty">
+                  <ClipboardList size={27} />
+                  <div>
+                    {query
+                      ? "No health records match your search."
+                      : selectedAnimalId === "all"
+                      ? "No health cases have been recorded yet."
+                      : "No case history is available for this animal yet."}
+                  </div>
+                </div>
+              ) : (
+                filteredCases.map((item) => {
+                  const risk = item?.risk || "Low";
 
+                  return (
+                    <div className="hr-timeline-item" key={item.id}>
+                      <div className="hr-timeline-icon">
+                        {riskClass(risk) === "critical" ||
+                        riskClass(risk) === "high" ? (
+                          <ShieldAlert size={17} />
+                        ) : (
+                          <Stethoscope size={17} />
+                        )}
+                      </div>
+
+                      <div className="hr-timeline-copy">
+                        <strong>
+                          {item?.animal_name || "Animal health event"} ·{" "}
+                          {item?.condition || "Health review"}
+                        </strong>
+
+                        <p>
+                          {item?.observations ||
+                            (Array.isArray(item?.symptoms) &&
+                            item.symptoms.length
+                              ? `Symptoms: ${item.symptoms.join(", ")}`
+                              : "No additional observation recorded.")}
+                        </p>
+
+                        <div className="hr-meta-line">
+                          <span
+                            className={`hr-mini-risk ${riskClass(risk)}`}
+                          >
+                            {risk}
+                          </span>
+
+                          <span className="hr-stage">
+                            {String(item?.stage || "reported")
+                              .replaceAll("_", " ")
+                              .replaceAll("-", " ")
+                              .replace(/\b\w/g, (letter) =>
+                                letter.toUpperCase()
+                              )}
+                          </span>
+
+                          <span className="hr-date">
+                            <CalendarDays size={10} />
+                            {formatDate(item?.created_at)}
+                          </span>
+
+                          {item?.village && (
+                            <span className="hr-date">
+                              <MapPinned size={10} />
+                              {item.village}
+                            </span>
+                          )}
+
+                          {item?.follow_up_date && (
+                            <span className="hr-date">
+                              <CalendarDays size={10} />
+                              Follow-up {formatDate(item.follow_up_date)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 5,
+                            color: "#a0aaa5",
+                            fontSize: 8,
+                          }}
+                        >
+                          Updated {formatDateTime(item?.updated_at)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </section>
-
         </div>
 
+        <div className="hr-note">
+          <Activity
+            size={11}
+            style={{ verticalAlign: "middle", marginRight: 5 }}
+          />
+          This screen uses the live animal and case records available through
+          the current API. Dedicated vaccination, treatment and laboratory
+          history endpoints can be layered into the same timeline next.
+        </div>
       </div>
-
-      {/* MODAL */}
-
-      {selectedRecord && (
-        <div
-          className="modal-overlay"
-          onClick={() =>
-            setSelectedRecord(null)
-          }
-        >
-
-          <div
-            className="record-modal"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
-          >
-
-            <div className="modal-head">
-
-              <h2>
-                Health Record Details
-              </h2>
-
-              <button
-                className="close-btn"
-                onClick={() =>
-                  setSelectedRecord(null)
-                }
-              >
-                <X size={17} />
-              </button>
-
-            </div>
-
-            <div className="modal-content">
-
-              <div className="modal-icon">
-                {recordIcon(
-                  selectedRecord.icon
-                )}
-              </div>
-
-              <h3>
-                {selectedRecord.title}
-              </h3>
-
-              <p>
-                {selectedRecord.description}
-              </p>
-
-              <div className="modal-details">
-
-                <div className="modal-detail">
-                  <span>RECORD ID</span>
-                  <b>
-                    {selectedRecord.id}
-                  </b>
-                </div>
-
-                <div className="modal-detail">
-                  <span>DATE</span>
-                  <b>
-                    {selectedRecord.date}
-                  </b>
-                </div>
-
-                <div className="modal-detail">
-                  <span>ANIMAL</span>
-                  <b>
-                    {selectedRecord.animal}
-                  </b>
-                </div>
-
-                <div className="modal-detail">
-                  <span>ANIMAL ID</span>
-                  <b>
-                    {selectedRecord.animalId}
-                  </b>
-                </div>
-
-                <div className="modal-detail">
-                  <span>CATEGORY</span>
-                  <b>
-                    {selectedRecord.category}
-                  </b>
-                </div>
-
-                <div className="modal-detail">
-                  <span>STATUS</span>
-                  <b>
-                    {selectedRecord.status}
-                  </b>
-                </div>
-
-              </div>
-
-            </div>
-
-            <div className="modal-footer">
-
-              <button
-                onClick={() =>
-                  setSelectedRecord(null)
-                }
-              >
-                Close
-              </button>
-
-              <button
-                className="primary"
-                onClick={() =>
-                  setSelectedRecord(null)
-                }
-              >
-                Mark Reviewed
-              </button>
-
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
     </>
   );
 }

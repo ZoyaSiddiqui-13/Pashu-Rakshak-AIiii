@@ -48,9 +48,12 @@ import Alerts from "./Alerts";
 import Notifications from "./Notifications";
 import HealthRecords from "./HealthRecords";
 import Veterinarian from "./Veterinarian";
+import Staff from "./Staff";
+import SuperAdmin from "./SuperAdmin";
 import Laboratory from "./Laboratory";
 import Vaccination from "./Vaccination";
 import Treatment from "./Treatment";
+import FollowUp from "./FollowUp";
 import Cases from "./Cases";
 import Outbreaks from "./Outbreaks";
 import Analytics from "./Analytics";
@@ -59,6 +62,7 @@ import Help from "./help";
 import SurveillanceMap from "./SurveillanceMap";
 
 import "./styles.css";
+import { LanguageProvider, useLanguage } from "./LanguageContext";
 
 /* =========================================================
    NAVIGATION
@@ -123,6 +127,11 @@ const healthNavigation = [
     label: "Treatment",
     path: "/treatment",
     icon: Pill,
+  },
+  {
+    label: "Follow-up",
+    path: "/follow-up",
+    icon: Clock3,
   },
   {
     label: "Cases",
@@ -769,6 +778,7 @@ function getDashboardIconStyle(type) {
 function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { language, setLanguage, t } = useLanguage();
 
   const [mobileMenu, setMobileMenu] =
     useState(false);
@@ -777,6 +787,40 @@ function AppLayout() {
     useState(false);
 
   const notifications = 6;
+
+  const roleId = localStorage.getItem("pashuRole") || "farm-admin";
+  const roleConfig = {
+    "farm-admin": { name: t("farmAdmin"), short: "FA", subtitle: "Administrator" },
+    "super-admin": { name: t("superAdmin"), short: "SA", subtitle: "System Administrator" },
+    veterinarian: { name: t("veterinarian"), short: "VT", subtitle: "Clinical Specialist" },
+    staff: { name: t("staff"), short: "ST", subtitle: "Field Operations" },
+  }[roleId] || { name: t("farmAdmin"), short: "FA", subtitle: "Administrator" };
+
+  const localizeNav = (items) =>
+    items.map((item) => {
+      const keyMap = {
+        "Dashboard": "dashboard",
+        "Animals": "animals",
+        "AI Detection": "aiDetection",
+        "Disease Map": "diseaseMap",
+        "Alerts": "alerts",
+        "Notifications": "notifications",
+        "Health Records": "healthRecords",
+        "Veterinarian": "veterinarian",
+        "Laboratory": "laboratory",
+        "Vaccination": "vaccination",
+        "Treatment": "treatment",
+        "Cases": "cases",
+        "Outbreaks": "outbreaks",
+        "Analytics": "analytics",
+        "Administration": "administration",
+      };
+
+      return {
+        ...item,
+        label: t(keyMap[item.label] || item.label),
+      };
+    });
 
   const isActive = (path) => {
     if (path === "/") {
@@ -838,7 +882,7 @@ function AppLayout() {
         <div style={layoutStyles.sidebarContent}>
           <NavSection
             title="MAIN"
-            items={mainNavigation}
+            items={localizeNav(mainNavigation)}
             isActive={isActive}
             closeMenu={() =>
               setMobileMenu(false)
@@ -847,7 +891,7 @@ function AppLayout() {
 
           <NavSection
             title="HEALTH MANAGEMENT"
-            items={healthNavigation}
+            items={localizeNav(healthNavigation)}
             isActive={isActive}
             closeMenu={() =>
               setMobileMenu(false)
@@ -856,7 +900,7 @@ function AppLayout() {
 
           <NavSection
             title="INSIGHTS"
-            items={insightNavigation}
+            items={localizeNav(insightNavigation)}
             isActive={isActive}
             closeMenu={() =>
               setMobileMenu(false)
@@ -878,7 +922,7 @@ function AppLayout() {
             })}
           >
             <UserCircle size={18} />
-            <span>Profile</span>
+            <span>{t("profile")}</span>
           </NavLink>
 
           <NavLink
@@ -894,7 +938,7 @@ function AppLayout() {
             })}
           >
             <HelpCircle size={18} />
-            <span>Help & Support</span>
+            <span>{t("helpSupport")}</span>
           </NavLink>
 
           <button
@@ -902,7 +946,7 @@ function AppLayout() {
             onClick={handleLogout}
           >
             <LogOut size={18} />
-            <span>Logout</span>
+            <span>{t("logout")}</span>
           </button>
         </div>
       </aside>
@@ -928,11 +972,25 @@ function AppLayout() {
             </span>
 
             <strong>
-              {getPageTitle(location.pathname)}
+              {t(getPageTitleKey(location.pathname))}
             </strong>
           </div>
 
           <div style={layoutStyles.topActions}>
+            <div style={layoutStyles.languageSelector}>
+              <span style={layoutStyles.languageLabel}>{t("language")}</span>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                style={layoutStyles.languageSelect}
+                aria-label={t("language")}
+              >
+                <option value="en">{t("english")}</option>
+                <option value="hi">{t("hindi")}</option>
+                <option value="mr">{t("marathi")}</option>
+              </select>
+            </div>
+
             <button
               style={layoutStyles.notificationButton}
               onClick={() =>
@@ -960,12 +1018,12 @@ function AppLayout() {
                 }
               >
                 <div style={layoutStyles.avatar}>
-                  FA
+                  {roleConfig.short}
                 </div>
 
                 <div style={layoutStyles.profileText}>
-                  <strong>Farm Admin</strong>
-                  <span>Administrator</span>
+                  <strong>{roleConfig.name}</strong>
+                  <span>{roleConfig.subtitle}</span>
                 </div>
 
                 <ChevronDown size={15} />
@@ -987,7 +1045,7 @@ function AppLayout() {
                     }
                   >
                     <UserCircle size={16} />
-                    Profile
+                    {t("profile")}
                   </button>
 
                   <button
@@ -1000,7 +1058,7 @@ function AppLayout() {
                     }
                   >
                     <HelpCircle size={16} />
-                    Help & Support
+                    {t("helpSupport")}
                   </button>
 
                   <button
@@ -1014,7 +1072,7 @@ function AppLayout() {
                     }}
                   >
                     <LogOut size={16} />
-                    Logout
+                    {t("logout")}
                   </button>
                 </div>
               )}
@@ -1066,6 +1124,21 @@ function AppLayout() {
             />
 
             <Route
+              path="/staff"
+              element={<Staff />}
+            />
+
+            <Route
+              path="/admin"
+              element={<SuperAdmin />}
+            />
+
+            <Route
+              path="/government-admin"
+              element={<Admin />}
+            />
+
+            <Route
               path="/laboratory"
               element={<Laboratory />}
             />
@@ -1081,6 +1154,11 @@ function AppLayout() {
             />
 
             <Route
+              path="/follow-up"
+              element={<FollowUp />}
+            />
+
+            <Route
               path="/cases"
               element={<Cases />}
             />
@@ -1093,11 +1171,6 @@ function AppLayout() {
             <Route
               path="/analytics"
               element={<Analytics />}
-            />
-
-            <Route
-              path="/admin"
-              element={<Admin />}
             />
 
             <Route
@@ -1421,28 +1494,30 @@ function SecurityItem({
    PAGE TITLE
 ========================================================= */
 
-function getPageTitle(pathname) {
+function getPageTitleKey(pathname) {
   const titles = {
-    "/": "Dashboard",
-    "/animals": "Animals",
-    "/ai-detection": "AI Detection",
-    "/map": "Disease Map",
-    "/alerts": "Alerts",
-    "/notifications": "Notifications",
-    "/records": "Health Records",
-    "/veterinarian": "Veterinarian",
-    "/laboratory": "Laboratory",
-    "/vaccination": "Vaccination",
-    "/treatment": "Treatment",
-    "/cases": "Cases",
-    "/outbreaks": "Outbreaks",
-    "/analytics": "Analytics",
-    "/admin": "Administration",
-    "/profile": "Profile",
-    "/help": "Help & Support",
+    "/": "dashboard",
+    "/animals": "animals",
+    "/ai-detection": "aiDetection",
+    "/map": "diseaseMap",
+    "/alerts": "alerts",
+    "/notifications": "notifications",
+    "/records": "healthRecords",
+    "/veterinarian": "veterinarian",
+    "/staff": "staff",
+    "/laboratory": "laboratory",
+    "/vaccination": "vaccination",
+    "/treatment": "treatment",
+    "/cases": "cases",
+    "/outbreaks": "outbreaks",
+    "/analytics": "analytics",
+    "/admin": "superAdmin",
+    "/government-admin": "governmentAdmin",
+    "/profile": "profile",
+    "/help": "helpSupport",
   };
 
-  return titles[pathname] || "Dashboard";
+  return titles[pathname] || "dashboard";
 }
 
 /* =========================================================
@@ -1999,6 +2074,32 @@ const layoutStyles = {
     gap: 15,
   },
 
+  languageSelector: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    border: "1px solid #e2e8f0",
+    background: "#ffffff",
+    borderRadius: 9,
+    padding: "6px 8px",
+  },
+
+  languageLabel: {
+    color: "#94a3b8",
+    fontSize: 9,
+    fontWeight: 700,
+  },
+
+  languageSelect: {
+    border: 0,
+    outline: 0,
+    background: "transparent",
+    color: "#334155",
+    fontSize: 10,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
   notificationButton: {
     position: "relative",
     width: 40,
@@ -2299,7 +2400,9 @@ ReactDOM.createRoot(
 ).render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <LanguageProvider>
+        <App />
+      </LanguageProvider>
     </BrowserRouter>
   </React.StrictMode>
 );
